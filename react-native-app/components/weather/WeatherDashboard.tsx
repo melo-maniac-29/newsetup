@@ -44,20 +44,7 @@ export function WeatherDashboard({ conditions, onRefresh }: WeatherDashboardProp
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Location Header */}
-      <View style={styles.locationHeader}>
-        <Text style={styles.locationTitle}>
-          {conditions.location.name}, {conditions.location.region}
-        </Text>
-        <Text style={styles.locationSubtitle}>
-          {conditions.location.country}
-        </Text>
-        <Text style={styles.lastUpdated}>
-          Updated: {new Date(conditions.lastUpdated).toLocaleTimeString()}
-        </Text>
-      </View>
-
+    <View style={styles.container}>
       {/* Weather Alerts */}
       {conditions.alerts.length > 0 && (
         <Card style={styles.alertsCard}>
@@ -177,7 +164,7 @@ export function WeatherDashboard({ conditions, onRefresh }: WeatherDashboardProp
       )}
 
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </View>
   );
 }
 
@@ -208,25 +195,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
-  },
-  locationHeader: {
-    padding: theme.spacing.lg,
-    backgroundColor: theme.colors.secondary,
-    alignItems: 'center',
-  },
-  locationTitle: {
-    ...theme.typography.h2,
-    color: theme.colors.onBackground,
-  },
-  locationSubtitle: {
-    ...theme.typography.body,
-    color: theme.colors.onSurfaceVariant,
-    marginTop: theme.spacing.xs,
-  },
-  lastUpdated: {
-    ...theme.typography.small,
-    color: theme.colors.onSurfaceVariant,
-    marginTop: theme.spacing.sm,
   },
   alertsCard: {
     margin: theme.spacing.md,

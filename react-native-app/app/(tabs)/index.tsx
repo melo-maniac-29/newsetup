@@ -175,8 +175,8 @@ export default function HomeScreen() {
       )}
 
       {/* Quick Actions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+      <Card style={styles.quickActionsCard}>
+        <Text style={styles.cardTitle}>Quick Actions</Text>
         <View style={styles.actionsGrid}>
           {quickActions.map((action, index) => (
             <TouchableOpacity
@@ -193,12 +193,12 @@ export default function HomeScreen() {
             </TouchableOpacity>
           ))}
         </View>
-      </View>
+      </Card>
 
       {/* DigiPIN Card */}
       <Card style={styles.digiPinCard}>
         <View style={styles.digiPinHeader}>
-          <View>
+          <View style={styles.digiPinInfo}>
             <Text style={styles.digiPinTitle}>Your DigiPIN</Text>
             <Text style={styles.digiPinSubtitle}>
               Share this with rescuers during emergencies
@@ -252,18 +252,18 @@ export default function HomeScreen() {
       )}
 
       {/* Environmental Conditions */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Environmental Conditions</Text>
+      <Card style={styles.weatherCard}>
+        <Text style={styles.cardTitle}>Environmental Conditions</Text>
         {conditions ? (
           <WeatherDashboard conditions={conditions} />
         ) : (
-          <Card>
-            <Text style={styles.alertMessage}>
-              {weatherLoading ? 'Loading weather conditions...' : 'Weather data unavailable'}
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>
+              {weatherLoading ? '🌤️ Loading weather conditions...' : '❌ Weather data unavailable'}
             </Text>
-          </Card>
+          </View>
         )}
-      </View>
+      </Card>
 
       <View style={styles.bottomSpacer} />
     </ScrollView>
@@ -344,6 +344,14 @@ const styles = StyleSheet.create({
   section: {
     padding: theme.spacing.lg,
   },
+  quickActionsCard: {
+    margin: theme.spacing.lg,
+  },
+  cardTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.onBackground,
+    marginBottom: theme.spacing.md,
+  },
   sectionTitle: {
     ...theme.typography.h2,
     color: theme.colors.onBackground,
@@ -391,6 +399,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: theme.spacing.md,
+  },
+  digiPinInfo: {
+    flex: 1,
   },
   digiPinTitle: {
     ...theme.typography.h3,
@@ -463,6 +474,18 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+  },
+  weatherCard: {
+    margin: theme.spacing.lg,
+  },
+  loadingContainer: {
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...theme.typography.body,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
   },
   bottomSpacer: {
     height: theme.spacing.xl,
