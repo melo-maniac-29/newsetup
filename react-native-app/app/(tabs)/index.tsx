@@ -16,6 +16,8 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Avatar } from '@/components/ui/Avatar';
+import WeatherDashboard from '@/components/weather/WeatherDashboard';
+import { useWeatherConditions } from '@/hooks/useWeatherConditions';
 import { theme } from '@/constants/theme';
 import { getCurrentDigiPin } from '@/utils/digipin';
 import { useMutation } from 'convex/react';
@@ -28,6 +30,9 @@ export default function HomeScreen() {
   const { getCurrentLocation } = useLocation();
   const [isRefreshingDigiPin, setIsRefreshingDigiPin] = useState(false);
   const [currentDigiPin, setCurrentDigiPin] = useState(user?.digiPin || 'PENDING-LOCATION');
+  
+  // Get weather conditions for current location
+  const { conditions, loading: weatherLoading, fetchConditionsByCoordinates } = useWeatherConditions();
   
   const updateUserLocation = useMutation(api.users.updateUserLocation);
   
@@ -70,6 +75,14 @@ export default function HomeScreen() {
       setCurrentDigiPin(user.digiPin);
     }
   }, [user?.digiPin]);
+
+  useEffect(() => {
+    // Fetch weather data when DigiPIN is available
+    if (currentDigiPin && currentDigiPin !== 'PENDING-LOCATION') {
+      // For now, use demo coordinates - Mumbai, India
+      fetchConditionsByCoordinates(19.0760, 72.8777);
+    }
+  }, [currentDigiPin, fetchConditionsByCoordinates]);
 
   const refreshDigiPin = async () => {
     if (!user?.id) return;
@@ -237,6 +250,20 @@ export default function HomeScreen() {
           </View>
         </Card>
       )}
+
+      {/* Environmental Conditions */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Environmental Conditions</Text>
+        {conditions ? (
+          <WeatherDashboard conditions={conditions} />
+        ) : (
+          <Card>
+            <Text style={styles.alertMessage}>
+              {weatherLoading ? 'Loading weather conditions...' : 'Weather data unavailable'}
+            </Text>
+          </Card>
+        )}
+      </View>
 
       <View style={styles.bottomSpacer} />
     </ScrollView>
