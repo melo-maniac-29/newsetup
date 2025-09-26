@@ -16,6 +16,8 @@ export interface FamilyMember {
   phone?: string;
   isAtSafeHouse: boolean;
   safeHouseId?: string;
+  safeHouseName?: string;
+  checkInTime?: number;
   digiPin?: string;
   profileImage?: string;
 }

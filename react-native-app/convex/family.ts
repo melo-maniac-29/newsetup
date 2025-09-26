@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Add family member relationship
+// Add family member relationship (bidirectional)
 export const addFamilyMember = mutation({
   args: {
     userId: v.id("users"),
@@ -11,18 +11,25 @@ export const addFamilyMember = mutation({
     relationship: v.string(),
   },
   handler: async (ctx, args) => {
-    // Check if relationship already exists
-    const existing = await ctx.db
+    // Check if relationship already exists (either direction)
+    const existingForward = await ctx.db
       .query("familyMembers")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .filter((q) => q.eq(q.field("familyMemberId"), args.familyMemberId))
       .unique();
 
-    if (existing) {
-      throw new Error("Family member already added");
+    const existingReverse = await ctx.db
+      .query("familyMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.familyMemberId))
+      .filter((q) => q.eq(q.field("familyMemberId"), args.userId))
+      .unique();
+
+    if (existingForward || existingReverse) {
+      throw new Error("Family member relationship already exists");
     }
 
-    const relationshipId = await ctx.db.insert("familyMembers", {
+    // Create bidirectional relationship
+    const relationshipId1 = await ctx.db.insert("familyMembers", {
       userId: args.userId,
       familyMemberId: args.familyMemberId,
       relationship: args.relationship,
@@ -30,11 +37,20 @@ export const addFamilyMember = mutation({
       addedAt: Date.now(),
     });
 
-    return relationshipId;
+    // Create reverse relationship (both see each other as "Family" by default)
+    const relationshipId2 = await ctx.db.insert("familyMembers", {
+      userId: args.familyMemberId,
+      familyMemberId: args.userId,
+      relationship: "Family", // Default relationship type
+      isAtSafeHouse: false,
+      addedAt: Date.now(),
+    });
+
+    return { relationshipId1, relationshipId2 };
   },
 });
 
-// Get family members for a user
+// Get family members for a user with real-time safe house status
 export const getFamilyMembers = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
@@ -43,13 +59,25 @@ export const getFamilyMembers = query({
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .collect();
 
-    // Get full user details for each family member
+    // Get full user details for each family member with real-time safe house status
     const familyMembers = await Promise.all(
       relationships.map(async (rel) => {
         const member = await ctx.db.get(rel.familyMemberId);
+        let safeHouseDetails = null;
+        
+        // Get real-time safe house info from user's currentSafeHouseId
+        if (member?.currentSafeHouseId) {
+          safeHouseDetails = await ctx.db.get(member.currentSafeHouseId);
+        }
+        
         return {
           ...rel,
           memberDetails: member,
+          // Override with real-time status from user record
+          isAtSafeHouse: !!member?.currentSafeHouseId,
+          safeHouseId: member?.currentSafeHouseId,
+          safeHouseName: safeHouseDetails?.name,
+          checkInTime: member?.checkInTime,
         };
       })
     );
@@ -84,23 +112,37 @@ export const updateFamilyMemberSafeHouse = mutation({
   },
 });
 
-// Remove family member
+// Remove family member (bidirectional)
 export const removeFamilyMember = mutation({
   args: {
     userId: v.id("users"),
     familyMemberId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const relationship = await ctx.db
+    // Find both directions of the relationship
+    const relationshipForward = await ctx.db
       .query("familyMembers")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .filter((q) => q.eq(q.field("familyMemberId"), args.familyMemberId))
       .unique();
 
-    if (!relationship) {
-      throw new Error("Family member not found");
+    const relationshipReverse = await ctx.db
+      .query("familyMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.familyMemberId))
+      .filter((q) => q.eq(q.field("familyMemberId"), args.userId))
+      .unique();
+
+    // Delete both relationships if they exist
+    if (relationshipForward) {
+      await ctx.db.delete(relationshipForward._id);
+    }
+    
+    if (relationshipReverse) {
+      await ctx.db.delete(relationshipReverse._id);
     }
 
-    await ctx.db.delete(relationship._id);
+    if (!relationshipForward && !relationshipReverse) {
+      throw new Error("Family member relationship not found");
+    }
   },
 });

@@ -11,8 +11,11 @@ export function useFamily(userId?: string) {
       name: convexMember.memberDetails?.name || 'Unknown',
       relationship: convexMember.relationship,
       phone: convexMember.memberDetails?.phone,
+      // Use real-time safe house status from user's currentSafeHouseId
       isAtSafeHouse: convexMember.isAtSafeHouse,
       safeHouseId: convexMember.safeHouseId,
+      safeHouseName: convexMember.safeHouseName,
+      checkInTime: convexMember.checkInTime,
       digiPin: convexMember.memberDetails?.digiPin,
       profileImage: convexMember.memberDetails?.profileImage,
     };
@@ -21,7 +24,6 @@ export function useFamily(userId?: string) {
   // Convex hooks
   const addFamilyMutation = useMutation(api.family.addFamilyMember);
   const removeFamilyMutation = useMutation(api.family.removeFamilyMember);
-  const updateFamilyStatusMutation = useMutation(api.family.updateFamilyMemberSafeHouse);
   const familyMembersQuery = useQuery(
     api.family.getFamilyMembers,
     userId ? { userId: userId as Id<'users'> } : 'skip'
@@ -59,30 +61,9 @@ export function useFamily(userId?: string) {
     }
   };
 
-  const updateFamilyMemberSafeHouse = async (
-    familyMemberId: string,
-    isAtSafeHouse: boolean,
-    safeHouseId?: string
-  ) => {
-    if (!userId) throw new Error('User ID required');
-    
-    try {
-      await updateFamilyStatusMutation({
-        userId: userId as Id<'users'>,
-        familyMemberId: familyMemberId as Id<'users'>,
-        isAtSafeHouse,
-        safeHouseId: safeHouseId as Id<'safeHouses'>,
-      });
-    } catch (error) {
-      console.error('Error updating family member status:', error);
-      throw error;
-    }
-  };
-
   return {
     familyMembers,
     addFamilyMember,
     removeFamilyMember,
-    updateFamilyMemberSafeHouse,
   };
 }

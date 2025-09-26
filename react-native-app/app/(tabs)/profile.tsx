@@ -115,12 +115,12 @@ export default function ProfileScreen() {
 
       // Add as family member
       Alert.alert(
-        'Add Family Member',
-        `Add ${scannedUser.name} to your family members?`,
+        'Connect as Family Members',
+        `Connect with ${scannedUser.name}? Both of you will see each other in your family lists.`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Add',
+            text: 'Connect',
             onPress: () => addScannedFamilyMember(scannedUser),
           },
         ]
@@ -135,9 +135,9 @@ export default function ProfileScreen() {
 
     try {
       await addFamilyMember(scannedUser.id, 'Family');
-      Alert.alert('Success', `${scannedUser.name} added to family members successfully`);
+      Alert.alert('Connected!', `You and ${scannedUser.name} are now connected as family members. Both of you can track each other's safety status.`);
     } catch (error) {
-      Alert.alert('Error', 'Failed to add family member');
+      Alert.alert('Error', 'Failed to connect as family members. They may already be in your family list.');
     }
   };
 
@@ -285,38 +285,70 @@ export default function ProfileScreen() {
 
         {familyMembers.length === 0 ? (
           <View style={styles.noFamilyContainer}>
+            <Users color={theme.colors.onSurfaceVariant} size={40} />
             <Text style={styles.noFamily}>
               No family members added yet.
             </Text>
             <Text style={styles.noFamilySubtext}>
-              Scan their QR codes to add family members and track their safety.
+              Scan their QR codes to connect with family and track their safety during emergencies.
             </Text>
+            <Button
+              title="Scan Family QR Code"
+              onPress={() => setShowScanner(true)}
+              variant="accent"
+              style={{ marginTop: theme.spacing.md }}
+            />
           </View>
         ) : (
           familyMembers.map((member) => (
-            <View key={member.id} style={styles.familyMember}>
-              <Avatar name={member.name} size="small" image={member.profileImage} />
-              
-              <View style={styles.familyMemberInfo}>
-                <Text style={styles.familyMemberName}>{member.name}</Text>
-                <Text style={styles.familyMemberRelation}>{member.relationship}</Text>
-                {member.phone && (
-                  <Text style={styles.familyMemberPhone}>📞 {member.phone}</Text>
-                )}
-                {member.digiPin && (
-                  <Text style={styles.familyMemberPin}>DigiPIN: {member.digiPin}</Text>
-                )}
+            <View key={member.id} style={styles.familyMemberCard}>
+              <View style={styles.familyMemberMain}>
+                <Avatar name={member.name} size="medium" image={member.profileImage} />
+                
+                <View style={styles.familyMemberDetails}>
+                  <View style={styles.familyMemberHeader}>
+                    <Text style={styles.familyMemberName}>{member.name}</Text>
+                    <TouchableOpacity onPress={() => removeFamilyMember(member.id)} style={styles.removeButton}>
+                      <Trash2 color={theme.colors.danger} size={16} />
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <Text style={styles.familyMemberRelation}>{member.relationship}</Text>
+                  
+                  {member.phone && (
+                    <Text style={styles.familyMemberContact}>📞 {member.phone}</Text>
+                  )}
+                  
+                  {member.digiPin && (
+                    <Text style={styles.familyMemberPin}>PIN: {member.digiPin}</Text>
+                  )}
+                </View>
               </View>
               
-              <View style={styles.familyMemberActions}>
-                <Badge
-                  label={member.isAtSafeHouse ? 'Safe' : 'Unknown'}
-                  variant={member.isAtSafeHouse ? 'success' : 'warning'}
-                  size="small"
-                />
-                <TouchableOpacity onPress={() => removeFamilyMember(member.id)}>
-                  <Trash2 color={theme.colors.danger} size={16} />
-                </TouchableOpacity>
+              <View style={styles.familyMemberStatus}>
+                {member.isAtSafeHouse ? (
+                  <View style={styles.safeStatusContainer}>
+                    <View style={styles.safeStatusBadge}>
+                      <Text style={styles.safeStatusText}>✅ SAFE</Text>
+                    </View>
+                    <Text style={styles.safeHouseLocation}>🏠 {member.safeHouseName || 'Safe House'}</Text>
+                    {member.checkInTime && (
+                      <Text style={styles.checkInTime}>
+                        Since {new Date(member.checkInTime).toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </Text>
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.unknownStatusContainer}>
+                    <View style={styles.unknownStatusBadge}>
+                      <Text style={styles.unknownStatusText}>❓ UNKNOWN</Text>
+                    </View>
+                    <Text style={styles.unknownStatusNote}>Location not tracked</Text>
+                  </View>
+                )}
               </View>
             </View>
           ))
@@ -346,19 +378,7 @@ export default function ProfileScreen() {
           />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.setting}>
-          <View style={styles.settingInfo}>
-            <Shield color={theme.colors.accent} size={20} />
-            <Text style={styles.settingText}>Privacy & Security</Text>
-          </View>
-        </TouchableOpacity>
 
-        <TouchableOpacity style={styles.setting}>
-          <View style={styles.settingInfo}>
-            <User color={theme.colors.accent} size={20} />
-            <Text style={styles.settingText}>Account Settings</Text>
-          </View>
-        </TouchableOpacity>
       </Card>
 
       {/* Logout */}
@@ -635,10 +655,106 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontSize: 11,
   },
+  familyMemberLocation: {
+    ...theme.typography.caption,
+    color: theme.colors.success,
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  familyMemberTime: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
+  },
   familyMemberActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
+  },
+  // New improved family member styles
+  familyMemberCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginVertical: theme.spacing.xs,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.accent,
+    ...theme.shadows.small,
+  },
+  familyMemberMain: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.sm,
+  },
+  familyMemberDetails: {
+    flex: 1,
+    marginLeft: theme.spacing.sm,
+  },
+  familyMemberHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: theme.spacing.xs,
+  },
+  familyMemberContact: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: 2,
+  },
+  removeButton: {
+    padding: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: `${theme.colors.danger}10`,
+  },
+  familyMemberStatus: {
+    marginTop: theme.spacing.xs,
+  },
+  safeStatusContainer: {
+    alignItems: 'flex-start',
+  },
+  safeStatusBadge: {
+    backgroundColor: theme.colors.success,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  safeStatusText: {
+    ...theme.typography.caption,
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 10,
+  },
+  safeHouseLocation: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    fontWeight: '600',
+    marginBottom: theme.spacing.xs,
+  },
+  checkInTime: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+  },
+  unknownStatusContainer: {
+    alignItems: 'flex-start',
+  },
+  unknownStatusBadge: {
+    backgroundColor: theme.colors.warning,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  unknownStatusText: {
+    ...theme.typography.caption,
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 10,
+  },
+  unknownStatusNote: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    fontStyle: 'italic',
   },
   settingsCard: {
     margin: theme.spacing.md,
