@@ -1,0 +1,21 @@
+{
+  "name": "flood-disaster-management-backend",
+  "version": "1.0.0",
+  "description": "Convex backend for AI-Powered Flood & Disaster Management Platform",
+  "main": "convex/http.ts",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "build": "convex build"
+  },
+  "dependencies": {
+    "convex": "^1.14.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0"
+  }
+}
