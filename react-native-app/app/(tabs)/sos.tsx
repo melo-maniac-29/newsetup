@@ -73,10 +73,10 @@ export default function SOSScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await sendSOSRequest(user.id, user.digiPin);
+              const result = await sendSOSRequest(user.id, user.digiPin);
               Alert.alert(
                 'SOS Sent Successfully',
-                `Your emergency request has been sent. Your DigiPIN is ${user.digiPin}`,
+                `Emergency request sent with your current location.\nDigiPIN: ${result.digiPin}\nLocation: ${result.location.address || `${result.location.latitude.toFixed(4)}, ${result.location.longitude.toFixed(4)}`}`,
                 [{ text: 'OK' }]
               );
             } catch (error) {

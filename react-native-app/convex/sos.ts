@@ -10,6 +10,7 @@ export const createSOSRequest = mutation({
     latitude: v.number(),
     longitude: v.number(),
     address: v.optional(v.string()),
+    currentDigiPin: v.optional(v.string()), // Current location DigiPIN
     notes: v.optional(v.string()),
     photos: v.optional(v.array(v.string())),
   },
@@ -18,6 +19,9 @@ export const createSOSRequest = mutation({
     if (!user) {
       throw new Error("User not found");
     }
+
+    // Use provided current DigiPIN or fall back to user's stored DigiPIN
+    const digiPinToUse = args.currentDigiPin || user.digiPin;
 
     // Get family members for clustering
     const familyRelationships = await ctx.db
@@ -29,7 +33,7 @@ export const createSOSRequest = mutation({
 
     const sosId = await ctx.db.insert("sosRequests", {
       userId: args.userId,
-      digiPin: user.digiPin,
+      digiPin: digiPinToUse, // Use the current location DigiPIN
       location: {
         latitude: args.latitude,
         longitude: args.longitude,

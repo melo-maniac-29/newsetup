@@ -3,6 +3,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { SOSRequest } from '@/types/user';
 import { useLocation } from './useLocation';
+import { getCurrentDigiPin } from '@/utils/digipin';
 import type { Id } from '@/convex/_generated/dataModel';
 
 export function useSOS(userId?: string) {
@@ -39,7 +40,7 @@ export function useSOS(userId?: string) {
     sos.status === 'sent' || sos.status === 'in-progress'
   )!) : null;
 
-  const sendSOS = async (userId: string, digiPin: string): Promise<SOSRequest> => {
+  const sendSOS = async (userId: string, fallbackDigiPin: string): Promise<SOSRequest> => {
     // Check if user already has an active SOS request
     const activeRequest = getUserSOSRequests?.find(sos => 
       sos.status === 'sent' || sos.status === 'in-progress'
@@ -52,9 +53,27 @@ export function useSOS(userId?: string) {
     setIsLoading(true);
     
     try {
+      // Get current location with high accuracy for emergency
+      console.log('Getting current location for SOS...');
       const location = await getCurrentLocation();
       if (!location) {
-        throw new Error('Unable to get location');
+        throw new Error('Unable to get current location for emergency');
+      }
+      
+      // Generate real-time DigiPIN based on current location
+      console.log('Generating real-time DigiPIN for current location...');
+      let currentDigiPin = fallbackDigiPin;
+      
+      try {
+        const digiPinResult = await getCurrentDigiPin();
+        if (digiPinResult.digiPin && !digiPinResult.error) {
+          currentDigiPin = digiPinResult.digiPin;
+          console.log('Generated current location DigiPIN:', currentDigiPin);
+        } else {
+          console.log('Using fallback DigiPIN due to error:', digiPinResult.error);
+        }
+      } catch (error) {
+        console.log('DigiPIN generation failed, using stored DigiPIN:', error);
       }
 
       const sosId = await createSOSRequest({
@@ -62,10 +81,11 @@ export function useSOS(userId?: string) {
         latitude: location.latitude,
         longitude: location.longitude,
         address: location.address,
+        currentDigiPin: currentDigiPin, // Pass the current location DigiPIN
         notes: 'Emergency assistance required',
       });
 
-      // Return the created SOS request
+      // Return the created SOS request with current DigiPIN
       const newSOSRequest: SOSRequest = {
         id: sosId,
         userId,
@@ -75,7 +95,7 @@ export function useSOS(userId?: string) {
           address: location.address,
         },
         status: 'sent',
-        digiPin,
+        digiPin: currentDigiPin, // Use the current location DigiPIN
         timestamp: new Date().toISOString(),
         notes: 'Emergency assistance required',
       };
