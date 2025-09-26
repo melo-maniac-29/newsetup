@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Shield, MapPin, AlertTriangle, Bell } from 'lucide-react-native';
+import { Shield, MapPin, AlertTriangle, Bell, RefreshCw } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFamily } from '@/hooks/useFamily';
 import { useLocation } from '@/hooks/useLocation';
@@ -17,12 +17,19 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Avatar } from '@/components/ui/Avatar';
 import { theme } from '@/constants/theme';
+import { getCurrentDigiPin } from '@/utils/digipin';
+import { useMutation } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { familyMembers } = useFamily(user?.id);
   const { getCurrentLocation } = useLocation();
+  const [isRefreshingDigiPin, setIsRefreshingDigiPin] = useState(false);
+  const [currentDigiPin, setCurrentDigiPin] = useState(user?.digiPin || 'PENDING-LOCATION');
+  
+  const updateUserLocation = useMutation(api.users.updateUserLocation);
   
   // Emergency alerts would come from a real alert system
   const alerts: Array<{
@@ -58,7 +65,48 @@ export default function HomeScreen() {
 
   useEffect(() => {
     getCurrentLocation();
-  }, []);
+    // Update local state when user changes
+    if (user?.digiPin) {
+      setCurrentDigiPin(user.digiPin);
+    }
+  }, [user?.digiPin]);
+
+  const refreshDigiPin = async () => {
+    if (!user?.id) return;
+    
+    setIsRefreshingDigiPin(true);
+    
+    try {
+      const result = await getCurrentDigiPin();
+      
+      if (result.error) {
+        Alert.alert('Location Error', result.error);
+        return;
+      }
+      
+      if (result.digiPin) {
+        // Update the DigiPIN in backend
+        await updateUserLocation({
+          userId: user.id as any,
+          latitude: result.latitude,
+          longitude: result.longitude,
+        });
+        
+        // Update local state immediately
+        setCurrentDigiPin(result.digiPin);
+        
+        Alert.alert(
+          'DigiPIN Updated!', 
+          `Your new DigiPIN: ${result.digiPin}\nLocation: ${result.latitude.toFixed(4)}, ${result.longitude.toFixed(4)}`
+        );
+      }
+    } catch (error) {
+      console.error('DigiPIN refresh error:', error);
+      Alert.alert('Error', 'Failed to refresh DigiPIN. Please try again.');
+    } finally {
+      setIsRefreshingDigiPin(false);
+    }
+  };
 
   if (!user) {
     return (
@@ -137,14 +185,36 @@ export default function HomeScreen() {
       {/* DigiPIN Card */}
       <Card style={styles.digiPinCard}>
         <View style={styles.digiPinHeader}>
-          <Text style={styles.digiPinTitle}>Your DigiPIN</Text>
-          <Text style={styles.digiPinSubtitle}>
-            Share this with rescuers during emergencies
-          </Text>
+          <View>
+            <Text style={styles.digiPinTitle}>Your DigiPIN</Text>
+            <Text style={styles.digiPinSubtitle}>
+              Share this with rescuers during emergencies
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.refreshButton, isRefreshingDigiPin && styles.refreshButtonDisabled]}
+            onPress={refreshDigiPin}
+            disabled={isRefreshingDigiPin}
+            activeOpacity={0.7}
+          >
+            <RefreshCw 
+              color={isRefreshingDigiPin ? theme.colors.onSurfaceVariant : theme.colors.accent} 
+              size={20} 
+              style={[isRefreshingDigiPin && styles.spinning]}
+            />
+          </TouchableOpacity>
         </View>
         <View style={styles.digiPinContainer}>
-          <Text style={styles.digiPin}>{user.digiPin}</Text>
+          <Text style={styles.digiPin}>{currentDigiPin}</Text>
+          {currentDigiPin === 'PENDING-LOCATION' && (
+            <Text style={styles.digiPinPending}>
+              Tap refresh to generate your DigiPIN
+            </Text>
+          )}
         </View>
+        <Text style={styles.digiPinNote}>
+          ✓ Works offline • Updates based on your current location
+        </Text>
       </Card>
 
       {/* Family Status */}
@@ -290,6 +360,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.secondary,
   },
   digiPinHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: theme.spacing.md,
   },
   digiPinTitle: {
@@ -300,6 +373,21 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+  },
+  refreshButton: {
+    backgroundColor: `${theme.colors.accent}15`,
+    borderRadius: theme.borderRadius.lg,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButtonDisabled: {
+    backgroundColor: theme.colors.surfaceVariant,
+    opacity: 0.6,
+  },
+  spinning: {
+    transform: [{ rotateZ: '360deg' }],
   },
   digiPinContainer: {
     backgroundColor: theme.colors.surface,
@@ -312,6 +400,18 @@ const styles = StyleSheet.create({
     color: theme.colors.accent,
     fontFamily: 'monospace',
     letterSpacing: 4,
+  },
+  digiPinPending: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    marginTop: theme.spacing.xs,
+    fontStyle: 'italic',
+  },
+  digiPinNote: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: theme.spacing.sm,
   },
   familyCard: {
     margin: theme.spacing.lg,
