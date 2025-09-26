@@ -223,12 +223,20 @@ export default function SafeHousesScreen() {
                   <Text style={styles.checkIcon}>✓</Text>
                   <Text style={styles.admissionText}>You're checked in</Text>
                 </View>
-                <Button
-                  title="Leave"
-                  onPress={() => handleLeaveComplex(safeHouse)}
-                  variant="danger"
-                  style={styles.leaveButton}
-                />
+                <View style={styles.admissionActions}>
+                  <Button
+                    title="View Occupants"
+                    onPress={() => handleViewOccupants(safeHouse)}
+                    variant="accent"
+                    style={styles.admissionButton}
+                  />
+                  <Button
+                    title="Leave"
+                    onPress={() => handleLeaveComplex(safeHouse)}
+                    variant="danger"
+                    style={styles.admissionButton}
+                  />
+                </View>
               </View>
             </>
           ) : (
@@ -1432,6 +1440,14 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.success,
+  },
+  admissionActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    width: '100%',
+  },
+  admissionButton: {
+    flex: 1,
   },
   checkIcon: {
     fontSize: 20,
