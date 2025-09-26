@@ -1,0 +1,58 @@
+This project provides a FastAPI backend that uses a trained PyTorch model (.pth) to detect hazards from uploaded images.
+The model classifies images into:
+🟡 Waterlogging
+🔴 Electrical Hazard
+✅ No Hazard
+
+📂 Project Structure
+hazard-backend/
+│── app/
+│    ├── main.py              # FastAPI app entry point
+│    ├── utils.py             # Model loading + prediction functions
+│    └── model/
+│         └── hazard_classifier_mobilenetv2.pth
+│── requirements.txt
+│── README.md
+
+⚙️ Setup
+1. Install dependencies
+pip install fastapi uvicorn torch torchvision pillow
+
+2. Model File (.pth)
+The .pth file only contains the weights of the trained model.
+To use it, we also need to:
+Define the model architecture (e.g., mobilenet_v2 with 3 output classes).
+Apply the same preprocessing transforms used during training (resize, normalize).
+Map the class IDs → human-readable labels.
+
+Example:
+
+from torchvision.models import mobilenet_v2
+import torch.nn as nn
+
+model = mobilenet_v2(pretrained=False)
+model.classifier[1] = nn.Linear(model.last_channel, 3)  # 3 classes
+
+🚀 Run the Backend
+1. Start FastAPI server
+uvicorn app.main:app --reload
+
+2. Endpoints
+
+POST /predict/ → Upload an image → Returns predicted hazard class
+
+(Future) /report/ → Upload photo + location + description (for full workflow)
+
+(Future) /status/{id} → Check hazard handling status
+
+📊 Example Prediction
+Input
+curl -X POST "http://127.0.0.1:8000/predict/" \
+  -F "file=@/path/to/test.jpg"
+
+Output
+{
+  "id": 2,
+  "label": "waterlogging hazard detected",
+  "confidence": 0.92
+}
