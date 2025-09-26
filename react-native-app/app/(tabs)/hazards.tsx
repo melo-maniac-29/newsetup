@@ -20,6 +20,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocation } from '@/hooks/useLocation';
+import { useHazards } from '@/hooks/useHazards';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -30,56 +31,13 @@ import { Hazard } from '@/types/user';
 export default function HazardsScreen() {
   const { user } = useAuth();
   const { getCurrentLocation } = useLocation();
-  const [hazards, setHazards] = useState<Hazard[]>([
-    {
-      id: '1',
-      reporterId: 'user-1',
-      title: 'Fallen Tree Blocking Road',
-      description: 'Large oak tree fell across Main Street after storm. Road completely blocked.',
-      location: {
-        latitude: 40.7128,
-        longitude: -74.0060,
-        address: 'Main Street, Downtown',
-      },
-      photos: [],
-      status: 'verified',
-      priority: 'high',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: '2',
-      reporterId: 'user-2',
-      title: 'Damaged Power Lines',
-      description: 'Power lines down near school area. Sparking and dangerous.',
-      location: {
-        latitude: 40.7589,
-        longitude: -73.9851,
-        address: 'School District, North Area',
-      },
-      photos: [],
-      status: 'assigned',
-      priority: 'critical',
-      assignedRescuerId: 'rescuer-1',
-      timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: '3',
-      reporterId: user?.id || 'user-3',
-      title: 'Flooding in Underpass',
-      description: 'Heavy rain caused flooding in the underpass. Water level about 2 feet.',
-      location: {
-        latitude: 40.6892,
-        longitude: -74.0445,
-        address: 'Central Underpass, South Area',
-      },
-      photos: [],
-      status: 'resolved',
-      priority: 'medium',
-      assignedRescuerId: 'rescuer-2',
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-      resolvedTimestamp: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-    },
-  ]);
+  const { 
+    hazards, 
+    loading, 
+    createHazard, 
+    updateHazardStatus, 
+    getHazardsByStatus 
+  } = useHazards();
 
   const [showReportForm, setShowReportForm] = useState(false);
   const [newHazard, setNewHazard] = useState({
@@ -124,19 +82,20 @@ export default function HazardsScreen() {
         return;
       }
 
-      const hazardReport: Hazard = {
-        id: Date.now().toString(),
-        reporterId: user!.id,
-        title: newHazard.title,
-        description: newHazard.description,
-        location,
-        photos: newHazard.photos,
-        status: 'pending',
-        priority: newHazard.priority,
-        timestamp: new Date().toISOString(),
-      };
-
-      setHazards(prev => [hazardReport, ...prev]);
+      const result = await createHazard(
+        user!.id,
+        newHazard.title,
+        newHazard.description,
+        location.latitude,
+        location.longitude,
+        location.address,
+        newHazard.photos
+      );
+      
+      if (!result.success) {
+        Alert.alert('Error', result.error || 'Failed to create hazard');
+        return;
+      }
       
       // Reset form
       setNewHazard({
@@ -159,32 +118,24 @@ export default function HazardsScreen() {
     }
   };
 
-  const acceptHazardTask = (hazardId: string) => {
-    setHazards(prev =>
-      prev.map(hazard =>
-        hazard.id === hazardId
-          ? { ...hazard, status: 'assigned', assignedRescuerId: user!.id }
-          : hazard
-      )
-    );
+  const acceptHazardTask = async (hazardId: string) => {
+    const result = await updateHazardStatus(hazardId, 'assigned', user!.id);
     
-    Alert.alert('Task Accepted', 'You have been assigned to resolve this hazard.');
+    if (result.success) {
+      Alert.alert('Task Accepted', 'You have been assigned to resolve this hazard.');
+    } else {
+      Alert.alert('Error', result.error || 'Failed to accept task');
+    }
   };
 
-  const markHazardResolved = (hazardId: string) => {
-    setHazards(prev =>
-      prev.map(hazard =>
-        hazard.id === hazardId
-          ? { 
-              ...hazard, 
-              status: 'resolved', 
-              resolvedTimestamp: new Date().toISOString(),
-            }
-          : hazard
-      )
-    );
+  const markHazardResolved = async (hazardId: string) => {
+    const result = await updateHazardStatus(hazardId, 'resolved', user!.id);
     
-    Alert.alert('Hazard Resolved', 'This hazard has been marked as resolved.');
+    if (result.success) {
+      Alert.alert('Task Completed', 'Hazard has been marked as resolved.');
+    } else {
+      Alert.alert('Error', result.error || 'Failed to resolve hazard');
+    }
   };
 
   const getPriorityColor = (priority: string) => {
@@ -430,7 +381,7 @@ export default function HazardsScreen() {
                 <Button
                   title="Mark Resolved"
                   onPress={() => markHazardResolved(hazard.id)}
-                  variant="success"
+                  variant="primary"
                   size="small"
                   style={styles.hazardActionButton}
                 />

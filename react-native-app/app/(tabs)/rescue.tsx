@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,9 @@ import {
   QrCode,
 } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
+import { useSOS } from '@/hooks/useSOS';
+import { useHazards } from '@/hooks/useHazards';
+import { useSafeHouses } from '@/hooks/useSafeHouses';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -26,72 +29,32 @@ import { theme } from '@/constants/theme';
 
 export default function RescueScreen() {
   const { user } = useAuth();
+  const { getActiveSOSRequests } = useSOS();
+  const { hazards, getHazardsByStatus } = useHazards();
+  const { safeHouses } = useSafeHouses();
   const [activeTab, setActiveTab] = useState<'sos' | 'hazards' | 'safehouses'>('sos');
+  const [activeSOS, setActiveSOS] = useState<any[]>([]);
 
-  // Mock data for rescue tasks
-  const [sosRequests] = useState([
-    {
-      id: '1',
-      userId: 'user-123',
-      digiPin: 'ABCD1234',
-      location: {
-        latitude: 40.7128,
-        longitude: -74.0060,
-        address: '123 Main St, Downtown',
-      },
-      status: 'sent' as const,
-      timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-      priority: 'high',
-      notes: '',
-    },
-    {
-      id: '2',
-      userId: 'user-456',
-      digiPin: 'EFGH5678',
-      location: {
-        latitude: 40.7589,
-        longitude: -73.9851,
-        address: '456 Oak Ave, North District',
-      },
-      status: 'in-progress' as const,
-      timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-      priority: 'critical',
-      rescuerId: user?.id,
-      notes: 'Person located, providing first aid',
-    },
-  ]);
+  useEffect(() => {
+    // Load active SOS requests for rescuers
+    const loadActiveSOS = async () => {
+      try {
+        const requests = await getActiveSOSRequests();
+        setActiveSOS(requests);
+      } catch (error) {
+        console.error('Error loading SOS requests:', error);
+      }
+    };
 
-  const [hazardTasks] = useState([
-    {
-      id: '1',
-      title: 'Clear Fallen Tree',
-      description: 'Large tree blocking Main Street',
-      location: 'Main Street, Downtown',
-      priority: 'high',
-      status: 'assigned' as const,
-      assignedTimestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    },
-    {
-      id: '2',
-      title: 'Fix Power Line',
-      description: 'Damaged power line near school',
-      location: 'School District, North',
-      priority: 'critical',
-      status: 'verified' as const,
-      reportedTimestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
-    },
-  ]);
+    if (user?.role === 'rescuer') {
+      loadActiveSOS();
+    }
+  }, [user]);
 
-  const [safeHouseTasks] = useState([
-    {
-      id: '1',
-      name: 'Central Community Center',
-      currentOccupancy: 45,
-      capacity: 200,
-      needsSupplies: ['Medical supplies', 'Food'],
-      lastUpdate: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    },
-  ]);
+  // Filter data for rescue dashboard
+  const assignedHazards = getHazardsByStatus('assigned');
+  const verifiedHazards = getHazardsByStatus('verified');
+  const activeSafeHouses = safeHouses.filter(sh => sh.isActive);
 
   if (!user || user.role !== 'rescuer') {
     return (
@@ -101,7 +64,7 @@ export default function RescueScreen() {
     );
   }
 
-  const acceptSOSTask = (sosId: string) => {
+  const acceptSOSTask = async (sosId: string) => {
     Alert.alert(
       'Accept SOS Task',
       'Are you sure you want to accept this rescue task?',
@@ -109,7 +72,8 @@ export default function RescueScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Accept',
-          onPress: () => {
+          onPress: async () => {
+            // This would use a proper Convex mutation to accept SOS requests
             Alert.alert('Task Accepted', 'You have been assigned to this rescue.');
           },
         },
@@ -198,7 +162,7 @@ export default function RescueScreen() {
         {/* SOS Tasks */}
         {activeTab === 'sos' && (
           <View style={styles.section}>
-            {sosRequests.map((sos) => (
+            {activeSOS.map((sos) => (
               <Card key={sos.id} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
                   <View style={styles.taskInfo}>
@@ -253,7 +217,7 @@ export default function RescueScreen() {
                     <Button
                       title="Mark Completed"
                       onPress={() => markSOSCompleted(sos.id)}
-                      variant="success"
+                      variant="primary"
                       size="small"
                       style={styles.taskActionButton}
                     />
@@ -267,7 +231,7 @@ export default function RescueScreen() {
               </Card>
             ))}
 
-            {sosRequests.length === 0 && (
+            {activeSOS.length === 0 && (
               <Card style={styles.emptyState}>
                 <Shield color={theme.colors.onSurfaceVariant} size={48} />
                 <Text style={styles.emptyStateText}>No active SOS requests</Text>
@@ -279,7 +243,7 @@ export default function RescueScreen() {
         {/* Hazard Tasks */}
         {activeTab === 'hazards' && (
           <View style={styles.section}>
-            {hazardTasks.map((hazard) => (
+            {[...assignedHazards, ...verifiedHazards].map((hazard) => (
               <Card key={hazard.id} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
                   <View style={styles.taskInfo}>
@@ -297,7 +261,7 @@ export default function RescueScreen() {
 
                 <View style={styles.taskDetail}>
                   <MapPin color={theme.colors.accent} size={16} />
-                  <Text style={styles.taskDetailText}>{hazard.location}</Text>
+                  <Text style={styles.taskDetailText}>{hazard.location?.address || 'No address'}</Text>
                 </View>
 
                 <View style={styles.taskActions}>
@@ -314,7 +278,7 @@ export default function RescueScreen() {
               </Card>
             ))}
 
-            {hazardTasks.length === 0 && (
+            {[...assignedHazards, ...verifiedHazards].length === 0 && (
               <Card style={styles.emptyState}>
                 <AlertTriangle color={theme.colors.onSurfaceVariant} size={48} />
                 <Text style={styles.emptyStateText}>No hazard tasks available</Text>
@@ -345,12 +309,12 @@ export default function RescueScreen() {
             </Card>
 
             {/* Safe House Status */}
-            {safeHouseTasks.map((safeHouse) => (
+            {activeSafeHouses.map((safeHouse) => (
               <Card key={safeHouse.id} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
                   <Text style={styles.taskTitle}>{safeHouse.name}</Text>
                   <Text style={styles.taskTime}>
-                    Updated {getTimeAgo(safeHouse.lastUpdate)}
+                    Capacity: {safeHouse.currentOccupancy}/{safeHouse.capacity}
                   </Text>
                 </View>
 
@@ -377,22 +341,11 @@ export default function RescueScreen() {
                   </View>
                 </View>
 
-                {safeHouse.needsSupplies.length > 0 && (
-                  <View style={styles.suppliesNeeded}>
-                    <Text style={styles.suppliesTitle}>Supplies Needed:</Text>
-                    <View style={styles.suppliesList}>
-                      {safeHouse.needsSupplies.map((supply, index) => (
-                        <Badge key={index} label={supply} variant="warning" size="small" />
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.taskActions}>
+                                <View style={styles.taskActions}>
                   <Button
-                    title="Manage"
-                    onPress={() => Alert.alert('Safe House Management', 'Opening management interface...')}
-                    variant="primary"
+                    title="View Details"
+                    onPress={() => {}}
+                    variant="accent"
                     size="small"
                     style={styles.taskActionButton}
                   />

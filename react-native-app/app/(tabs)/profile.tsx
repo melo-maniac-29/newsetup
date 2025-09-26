@@ -28,6 +28,7 @@ import * as Speech from 'expo-speech';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '@/hooks/useAuth';
+import { useFamily } from '@/hooks/useFamily';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -39,6 +40,7 @@ const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const { user, logout, updateUser } = useAuth();
+  const { familyMembers, addFamilyMember, removeFamilyMember: removeFamilyFromConvex } = useFamily(user?.id);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user?.name || '');
@@ -117,22 +119,8 @@ export default function ProfileScreen() {
   const addScannedFamilyMember = async (scannedUser: any) => {
     if (!user) return;
 
-    const familyMember: FamilyMember = {
-      id: scannedUser.id,
-      name: scannedUser.name,
-      relationship: 'Family', // Can be updated later
-      phone: scannedUser.phone || '',
-      isAtSafeHouse: false,
-      digiPin: scannedUser.digiPin,
-      profileImage: scannedUser.profileImage,
-    };
-
     try {
-      await updateUser({
-        ...user,
-        familyMembers: [...user.familyMembers, familyMember],
-      });
-      
+      await addFamilyMember(scannedUser.id, 'Family');
       Alert.alert('Success', `${scannedUser.name} added to family members successfully`);
     } catch (error) {
       Alert.alert('Error', 'Failed to add family member');
@@ -152,10 +140,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await updateUser({
-                ...user,
-                familyMembers: user.familyMembers.filter(member => member.id !== memberId),
-              });
+              await removeFamilyFromConvex(memberId);
               Alert.alert('Success', 'Family member removed successfully');
             } catch (error) {
               Alert.alert('Error', 'Failed to remove family member');
@@ -276,7 +261,7 @@ export default function ProfileScreen() {
         <View style={styles.familyHeader}>
           <View style={styles.familyInfo}>
             <Users color={theme.colors.accent} size={20} />
-            <Text style={styles.familyTitle}>Family Members ({user.familyMembers.length})</Text>
+            <Text style={styles.familyTitle}>Family Members ({familyMembers.length})</Text>
           </View>
           
           <TouchableOpacity onPress={() => setShowScanner(true)} style={styles.scanButton}>
@@ -284,17 +269,17 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {user.familyMembers.length === 0 ? (
+        {familyMembers.length === 0 ? (
           <View style={styles.noFamilyContainer}>
             <Text style={styles.noFamily}>
               No family members added yet.
             </Text>
             <Text style={styles.noFamilySubtext}>
-              Tap the scan icon above to scan their QR codes and add family members to track their safety.
+              Scan their QR codes to add family members and track their safety.
             </Text>
           </View>
         ) : (
-          user.familyMembers.map((member) => (
+          familyMembers.map((member) => (
             <View key={member.id} style={styles.familyMember}>
               <Avatar name={member.name} size="small" image={member.profileImage} />
               

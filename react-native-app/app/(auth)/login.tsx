@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Shield, Mail, Phone, Lock } from 'lucide-react-native';
+import { Shield, Mail, Phone, User } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -19,69 +19,49 @@ import { theme } from '@/constants/theme';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
+  const { login, user } = useAuth();
   const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [role, setRole] = useState<'civilian' | 'rescuer'>('civilian');
   const [isLoading, setIsLoading] = useState(false);
 
-  const sendOTP = async () => {
-    if (!email.trim() && !phone.trim()) {
-      Alert.alert('Error', 'Please enter email or phone number');
-      return;
-    }
-
-    setIsLoading(true);
-    
-    try {
-      // Simulate OTP sending
+  // Watch for user changes and redirect
+  useEffect(() => {
+    if (user) {
+      console.log('User detected in login screen, redirecting...');
+      // Small delay to ensure state is properly set
       setTimeout(() => {
-        setOtpSent(true);
-        setIsLoading(false);
-        Alert.alert(
-          'OTP Sent',
-          'A verification code has been sent to your email/phone. Use "123456" for demo purposes.',
-          [{ text: 'OK' }]
-        );
-      }, 1500);
-    } catch (error) {
-      setIsLoading(false);
-      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+        router.replace('/(tabs)');
+      }, 100);
     }
-  };
+  }, [user, router]);
 
-  const verifyOTP = async () => {
-    if (!otp.trim()) {
-      Alert.alert('Error', 'Please enter the OTP');
+  const handleLogin = async () => {
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
-    // Demo OTP verification
-    if (otp !== '123456') {
-      Alert.alert('Error', 'Invalid OTP. Use "123456" for demo.');
+    if (!name.trim()) {
+      Alert.alert('Error', 'Please enter your name');
       return;
     }
 
     setIsLoading(true);
     
     try {
-      await login(email || 'user@example.com', phone || '+1234567890', otp);
-      router.replace('/(tabs)');
+      console.log('Starting login from UI...');
+      const user = await login(email, name, phone, role);
+      console.log('Login successful, user:', user);
+      // Navigation will be handled automatically by the authentication routing
+      
     } catch (error) {
+      console.error('Login failed:', error);
       Alert.alert('Error', 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const resetForm = () => {
-    setEmail('');
-    setPhone('');
-    setOtp('');
-    setOtpSent(false);
-    setIsLoading(false);
   };
 
   return (
@@ -97,115 +77,102 @@ export default function LoginScreen() {
           </View>
           <Text style={styles.title}>Emergency Response</Text>
           <Text style={styles.subtitle}>
-            {isLogin ? 'Welcome back' : 'Create your account'}
+            Create your account or login
           </Text>
         </View>
 
         {/* Login/Signup Form */}
         <Card style={styles.formCard}>
-          {!otpSent ? (
-            <>
-              {/* Email Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email Address</Text>
-                <View style={styles.inputWrapper}>
-                  <Mail color={theme.colors.onSurfaceVariant} size={20} />
-                  <TextInput
-                    style={styles.textInput}
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="Enter your email"
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoComplete="email"
-                  />
-                </View>
-              </View>
-
-              {/* Phone Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Phone Number</Text>
-                <View style={styles.inputWrapper}>
-                  <Phone color={theme.colors.onSurfaceVariant} size={20} />
-                  <TextInput
-                    style={styles.textInput}
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="Enter your phone number"
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                    keyboardType="phone-pad"
-                    autoComplete="tel"
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.orText}>
-                Enter either email or phone number to receive OTP
-              </Text>
-
-              <Button
-                title={isLoading ? 'Sending...' : 'Send OTP'}
-                onPress={sendOTP}
-                variant="accent"
-                size="large"
-                disabled={isLoading}
-                style={styles.submitButton}
+          {/* Email Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Email Address *</Text>
+            <View style={styles.inputWrapper}>
+              <Mail color={theme.colors.onSurfaceVariant} size={20} />
+              <TextInput
+                style={styles.textInput}
+                value={email}
+                onChangeText={setEmail}
+                placeholder="Enter your email"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
               />
-            </>
-          ) : (
-            <>
-              {/* OTP Input */}
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Verification Code</Text>
-                <View style={styles.inputWrapper}>
-                  <Lock color={theme.colors.onSurfaceVariant} size={20} />
-                  <TextInput
-                    style={styles.textInput}
-                    value={otp}
-                    onChangeText={setOtp}
-                    placeholder="Enter 6-digit code"
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                    keyboardType="numeric"
-                    maxLength={6}
-                    autoComplete="one-time-code"
-                  />
-                </View>
-              </View>
+            </View>
+          </View>
 
-              <Text style={styles.otpNote}>
-                We've sent a verification code to{'\n'}
-                {email && <Text style={styles.contactInfo}>{email}</Text>}
-                {email && phone && ' or '}
-                {phone && <Text style={styles.contactInfo}>{phone}</Text>}
-                {'\n\n'}
-                <Text style={styles.demoNote}>For demo: use code "123456"</Text>
-              </Text>
-
-              <Button
-                title={isLoading ? 'Verifying...' : 'Verify & Continue'}
-                onPress={verifyOTP}
-                variant="accent"
-                size="large"
-                disabled={isLoading}
-                style={styles.submitButton}
+          {/* Name Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Full Name *</Text>
+            <View style={styles.inputWrapper}>
+              <User color={theme.colors.onSurfaceVariant} size={20} />
+              <TextInput
+                style={styles.textInput}
+                value={name}
+                onChangeText={setName}
+                placeholder="Enter your full name"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                autoComplete="name"
               />
+            </View>
+          </View>
 
-              <TouchableOpacity onPress={resetForm} style={styles.backButton}>
-                <Text style={styles.backButtonText}>← Back to login</Text>
+          {/* Phone Input */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
+            <View style={styles.inputWrapper}>
+              <Phone color={theme.colors.onSurfaceVariant} size={20} />
+              <TextInput
+                style={styles.textInput}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="Enter your phone number"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                keyboardType="phone-pad"
+                autoComplete="tel"
+              />
+            </View>
+          </View>
+
+          {/* Role Selection */}
+          <View style={styles.inputContainer}>
+            <Text style={styles.inputLabel}>Role</Text>
+            <View style={styles.roleContainer}>
+              <TouchableOpacity
+                style={[styles.roleButton, role === 'civilian' && styles.roleButtonActive]}
+                onPress={() => setRole('civilian')}
+              >
+                <User color={role === 'civilian' ? theme.colors.surface : theme.colors.onSurfaceVariant} size={16} />
+                <Text style={[styles.roleText, role === 'civilian' && styles.roleTextActive]}>Civilian</Text>
               </TouchableOpacity>
-            </>
-          )}
+              <TouchableOpacity
+                style={[styles.roleButton, role === 'rescuer' && styles.roleButtonActive]}
+                onPress={() => setRole('rescuer')}
+              >
+                <Shield color={role === 'rescuer' ? theme.colors.surface : theme.colors.onSurfaceVariant} size={16} />
+                <Text style={[styles.roleText, role === 'rescuer' && styles.roleTextActive]}>Rescuer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <Button
+            title={isLoading ? 'Creating Account...' : 'Login / Sign Up'}
+            onPress={handleLogin}
+            variant="accent"
+            size="large"
+            disabled={isLoading}
+            style={styles.submitButton}
+          />
         </Card>
 
-        {/* Demo Information */}
+        {/* App Information */}
         <Card style={styles.demoCard}>
-          <Text style={styles.demoTitle}>Demo Information</Text>
+          <Text style={styles.demoTitle}>How It Works</Text>
           <View style={styles.demoInfo}>
-            <Text style={styles.demoText}>• Use any email/phone to register</Text>
-            <Text style={styles.demoText}>• OTP code: 123456</Text>
-            <Text style={styles.demoText}>• Default role: Civilian</Text>
-            <Text style={styles.demoText}>• Rescuer features available in app</Text>
+            <Text style={styles.demoText}>• Enter your email and name to create an account</Text>
+            <Text style={styles.demoText}>• Choose Civilian for emergency assistance</Text>
+            <Text style={styles.demoText}>• Choose Rescuer for emergency response duties</Text>
+            <Text style={styles.demoText}>• Your unique DigiPIN will be generated automatically</Text>
           </View>
         </Card>
 
@@ -353,6 +320,35 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.onBackground,
     marginBottom: theme.spacing.xs,
+  },
+  roleContainer: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  roleButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.surface,
+    gap: theme.spacing.xs,
+  },
+  roleButtonActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  roleText: {
+    ...theme.typography.body,
+    color: theme.colors.onSurfaceVariant,
+    fontWeight: '500',
+  },
+  roleTextActive: {
+    color: theme.colors.surface,
   },
   bottomSpacer: {
     height: theme.spacing.xl,

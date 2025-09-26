@@ -10,19 +10,16 @@ import {
 } from 'react-native';
 import { Shield, MapPin, Clock, Phone, CheckCircle } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
-import { useLocation } from '@/hooks/useLocation';
+import { useSOS } from '@/hooks/useSOS';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusIndicator } from '@/components/ui/StatusIndicator';
 import { theme } from '@/constants/theme';
-import { SOSRequest } from '@/types/user';
 
 export default function SOSScreen() {
   const { user } = useAuth();
-  const { getCurrentLocation } = useLocation();
-  const [sosRequest, setSosRequest] = useState<SOSRequest | null>(null);
+  const { sosRequest, isLoading, sendSOS: sendSOSRequest, cancelSOS } = useSOS(user?.id);
   const [pulseAnim] = useState(new Animated.Value(1));
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (sosRequest?.status === 'sent') {
@@ -47,46 +44,24 @@ export default function SOSScreen() {
     ).start();
   };
 
-  const sendSOS = async () => {
-    setIsLoading(true);
+  const handleSendSOS = async () => {
+    if (!user) return;
     
     try {
-      const location = await getCurrentLocation();
-      
-      if (!location) {
-        Alert.alert('Error', 'Unable to get your location. Please try again.');
-        return;
-      }
-
-      const newSosRequest: SOSRequest = {
-        id: Date.now().toString(),
-        userId: user!.id,
-        location,
-        status: 'sent',
-        digiPin: user!.digiPin,
-        timestamp: new Date().toISOString(),
-      };
-
-      setSosRequest(newSosRequest);
-      
-      // Simulate sending to rescue services
-      setTimeout(() => {
-        setSosRequest(prev => prev ? { ...prev, status: 'in-progress', rescuerId: 'rescuer-123' } : null);
-      }, 5000);
-
+      await sendSOSRequest(user.id, user.digiPin);
       Alert.alert(
         'SOS Sent Successfully',
-        `Your emergency request has been sent to rescue services. Your DigiPIN is ${user!.digiPin}`,
+        `Your emergency request has been sent. Your DigiPIN is ${user.digiPin}`,
         [{ text: 'OK' }]
       );
     } catch (error) {
       Alert.alert('Error', 'Failed to send SOS. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const cancelSOS = () => {
+  const handleCancelSOS = () => {
+    if (!sosRequest) return;
+    
     Alert.alert(
       'Cancel SOS Request',
       'Are you sure you want to cancel your emergency request?',
@@ -95,7 +70,7 @@ export default function SOSScreen() {
         {
           text: 'Yes, Cancel',
           style: 'destructive',
-          onPress: () => setSosRequest(null),
+          onPress: () => cancelSOS(sosRequest.id),
         },
       ]
     );
@@ -174,7 +149,7 @@ export default function SOSScreen() {
                 <View style={styles.rescuerDetail}>
                   <Phone color={theme.colors.accent} size={16} />
                   <Text style={styles.rescuerContact}>
-                    Contact available in rescue app
+                    Rescuer ID: {sosRequest.rescuerId}
                   </Text>
                 </View>
               </View>
@@ -183,7 +158,7 @@ export default function SOSScreen() {
             {sosRequest.status === 'sent' && (
               <Button
                 title="Cancel SOS"
-                onPress={cancelSOS}
+                onPress={handleCancelSOS}
                 variant="secondary"
                 style={styles.cancelButton}
               />
@@ -220,7 +195,7 @@ export default function SOSScreen() {
         <View style={styles.sosButtonContainer}>
           <TouchableOpacity
             style={[styles.sosButton, isLoading && styles.sosButtonDisabled]}
-            onPress={sendSOS}
+            onPress={handleSendSOS}
             disabled={isLoading}
             activeOpacity={0.8}
           >
@@ -233,7 +208,7 @@ export default function SOSScreen() {
           </TouchableOpacity>
 
           <Text style={styles.sosInstructions}>
-            Press and hold the SOS button to send an emergency alert to rescue services.
+            Press the SOS button to send an emergency alert to rescue services.
             Your location and DigiPIN will be shared automatically.
           </Text>
         </View>

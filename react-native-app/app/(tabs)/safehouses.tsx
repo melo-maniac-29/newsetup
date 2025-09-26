@@ -11,6 +11,7 @@ import { MapPin, Users, QrCode, CheckCircle, Navigation } from 'lucide-react-nat
 import QRCode from 'react-native-qrcode-svg';
 import { useAuth } from '@/hooks/useAuth';
 import { useLocation } from '@/hooks/useLocation';
+import { useSafeHouses } from '@/hooks/useSafeHouses';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -20,44 +21,13 @@ import { SafeHouse } from '@/types/user';
 export default function SafeHousesScreen() {
   const { user } = useAuth();
   const { getCurrentLocation } = useLocation();
-  const [safeHouses, setSafeHouses] = useState<SafeHouse[]>([
-    {
-      id: '1',
-      name: 'Central Community Center',
-      address: '123 Main St, Downtown',
-      location: { latitude: 40.7128, longitude: -74.0060 },
-      capacity: 200,
-      currentOccupancy: 45,
-      facilities: ['Food', 'Medical', 'Shelter', 'Communications'],
-      managerId: 'manager-1',
-      qrCode: 'safehouse-1-checkin',
-      isActive: true,
-    },
-    {
-      id: '2',
-      name: 'North District School',
-      address: '456 Oak Ave, North District',
-      location: { latitude: 40.7589, longitude: -73.9851 },
-      capacity: 150,
-      currentOccupancy: 23,
-      facilities: ['Shelter', 'Communications', 'Children Care'],
-      managerId: 'manager-2',
-      qrCode: 'safehouse-2-checkin',
-      isActive: true,
-    },
-    {
-      id: '3',
-      name: 'South Emergency Shelter',
-      address: '789 Pine Rd, South Area',
-      location: { latitude: 40.6892, longitude: -74.0445 },
-      capacity: 100,
-      currentOccupancy: 67,
-      facilities: ['Food', 'Medical', 'Shelter'],
-      managerId: 'manager-3',
-      qrCode: 'safehouse-3-checkin',
-      isActive: true,
-    },
-  ]);
+  const { 
+    safeHouses, 
+    loading, 
+    getNearestSafeHouses, 
+    checkInToSafeHouse, 
+    checkOutFromSafeHouse 
+  } = useSafeHouses();
   
   const [selectedSafeHouse, setSelectedSafeHouse] = useState<SafeHouse | null>(null);
   const [showQRCode, setShowQRCode] = useState(false);

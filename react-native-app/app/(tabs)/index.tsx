@@ -10,6 +10,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Shield, MapPin, AlertTriangle, Bell } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
+import { useFamily } from '@/hooks/useFamily';
 import { useLocation } from '@/hooks/useLocation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,21 +21,16 @@ import { theme } from '@/constants/theme';
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { familyMembers } = useFamily(user?.id);
   const { getCurrentLocation } = useLocation();
-  const [alerts, setAlerts] = useState([
-    {
-      id: '1',
-      message: 'Flash flood warning in downtown area',
-      priority: 'high' as const,
-      timestamp: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      message: '3 new safe houses available',
-      priority: 'medium' as const,
-      timestamp: new Date().toISOString(),
-    },
-  ]);
+  
+  // Emergency alerts would come from a real alert system
+  const alerts: Array<{
+    id: string;
+    message: string;
+    priority: 'high' | 'medium' | 'low';
+    timestamp: string;
+  }> = [];
 
   const quickActions = [
     {
@@ -152,19 +148,19 @@ export default function HomeScreen() {
       </Card>
 
       {/* Family Status */}
-      {user.familyMembers.length > 0 && (
+      {familyMembers.length > 0 && (
         <Card style={styles.familyCard}>
           <Text style={styles.familyTitle}>Family Status</Text>
           <View style={styles.familyStats}>
             <View style={styles.familyStat}>
               <Text style={styles.familyStatNumber}>
-                {user.familyMembers.filter(m => m.isAtSafeHouse).length}
+                {familyMembers.filter(m => m.isAtSafeHouse).length}
               </Text>
               <Text style={styles.familyStatLabel}>At Safe House</Text>
             </View>
             <View style={styles.familyStat}>
               <Text style={styles.familyStatNumber}>
-                {user.familyMembers.length}
+                {familyMembers.length}
               </Text>
               <Text style={styles.familyStatLabel}>Total Members</Text>
             </View>
