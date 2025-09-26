@@ -44,12 +44,14 @@ export interface SafeHouse {
     latitude: number;
     longitude: number;
   };
+  locationDigiPin: string; // DigiPIN based on safe house location
   capacity: number;
   currentOccupancy: number;
   facilities: string[];
   managerId: string;
-  qrCode: string;
+  qrCode?: string;
   isActive: boolean;
+  distance?: number; // Added when calculating nearest safe houses
 }
 
 export interface Hazard {

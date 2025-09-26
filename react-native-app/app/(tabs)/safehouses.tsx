@@ -2,294 +2,1023 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   Alert,
+  StyleSheet,
+  Modal,
+  TextInput,
+  Share,
 } from 'react-native';
-import { MapPin, Users, QrCode, CheckCircle, Navigation } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Plus, MapPin, Users, X, QrCode, Trash2 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { useAuth } from '@/contexts/AuthContext';
-import { useLocation } from '@/hooks/useLocation';
-import { useSafeHouses } from '@/hooks/useSafeHouses';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { theme } from '@/constants/theme';
-import { SafeHouse } from '@/types/user';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { theme } from '../../constants/theme';
+import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { useAuth } from '../../contexts/AuthContext';
+import { useSafeHouses } from '../../hooks/useSafeHouses';
+
+import type { SafeHouse } from '../../types/user';
+import type { Id } from '../../convex/_generated/dataModel';
 
 export default function SafeHousesScreen() {
-  const { user } = useAuth();
-  const { getCurrentLocation } = useLocation();
-  const { 
-    safeHouses, 
-    loading, 
-    getNearestSafeHouses, 
-    checkInToSafeHouse, 
-    checkOutFromSafeHouse 
-  } = useSafeHouses();
+  const router = useRouter();
+  const { user, isAuthenticated } = useAuth();
+  const { safeHouses, loading, createSafeHouse, deleteSafeHouse, updateOccupancy, checkInToSafeHouse, checkOutFromSafeHouse } = useSafeHouses();
   
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showOccupancyModal, setShowOccupancyModal] = useState(false);
+  const [showPersonalQRModal, setShowPersonalQRModal] = useState(false);
+  const [showOccupantsModal, setShowOccupantsModal] = useState(false);
+  const [showQRScannerModal, setShowQRScannerModal] = useState(false);
   const [selectedSafeHouse, setSelectedSafeHouse] = useState<SafeHouse | null>(null);
-  const [showQRCode, setShowQRCode] = useState(false);
-  const [checkedIn, setCheckedIn] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  // Use the new query to get the user's current safe house status
+  const currentUserStatus = useQuery(api.safehouses.getUserCheckInStatus, user?.id ? { userId: user.id as Id<'users'> } : "skip");
 
   const isRescuer = user?.role === 'rescuer';
 
-  const generateCheckInQR = (safeHouse: SafeHouse) => {
+  // Function to check if user is currently checked in to a specific safe house
+  const isUserCheckedIn = (safeHouseId: string): boolean => {
+    if (!currentUserStatus || !currentUserStatus.isCheckedIn) {
+      return false;
+    }
+    return currentUserStatus.safeHouse?._id === safeHouseId;
+  };
+
+  // Function to handle successful check-in and refresh data
+  const handleSuccessfulCheckIn = async (safeHouseId: string, userId: string) => {
+    // The currentUserStatus query will automatically update due to Convex reactivity
+    setShowQRScannerModal(false);
+    Alert.alert('Success', 'User checked in successfully!');
+  };
+
+  const handleLeaveComplex = async (safeHouse: SafeHouse) => {
     if (!user) return;
-    
-    const qrData = JSON.stringify({
-      type: 'safehouse_checkin',
-      safeHouseId: safeHouse.id,
-      userId: user.id,
-      digiPin: user.digiPin,
-      timestamp: new Date().toISOString(),
-      familyMembers: user.familyMembers.length,
-    });
-    
-    setSelectedSafeHouse(safeHouse);
-    setShowQRCode(true);
-  };
 
-  const checkIn = (safeHouse: SafeHouse) => {
-    generateCheckInQR(safeHouse);
-  };
-
-  const getDirections = (safeHouse: SafeHouse) => {
     Alert.alert(
-      'Get Directions',
-      `Opening directions to ${safeHouse.name}`,
-      [{ text: 'OK' }]
+      'Leave Safe House',
+      `Are you sure you want to check out from ${safeHouse.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await checkOutFromSafeHouse(user.id, safeHouse.id);
+              // The currentUserStatus query will automatically update due to Convex reactivity
+              Alert.alert('Success', `You have checked out from ${safeHouse.name}`);
+            } catch (error) {
+              Alert.alert('Error', error instanceof Error ? error.message : 'Failed to check out');
+            }
+          },
+        },
+      ]
     );
   };
 
-  const getOccupancyColor = (occupancy: number, capacity: number) => {
-    const percentage = (occupancy / capacity) * 100;
-    if (percentage > 80) return theme.colors.danger;
-    if (percentage > 60) return theme.colors.warning;
-    return theme.colors.success;
-  };
-
-  const getOccupancyStatus = (occupancy: number, capacity: number) => {
-    const percentage = (occupancy / capacity) * 100;
-    if (percentage > 90) return 'Full';
-    if (percentage > 80) return 'Almost Full';
-    if (percentage > 60) return 'Moderate';
-    return 'Available';
-  };
-
-  if (!user) {
+  // Early return for authentication check
+  if (!isAuthenticated) {
     return (
       <View style={styles.authRequired}>
-        <Text style={styles.authText}>Please log in to view safe houses</Text>
+        <Text style={styles.authText}>
+          Please log in to access safe houses information.
+        </Text>
       </View>
     );
   }
 
-  if (showQRCode && selectedSafeHouse) {
-    return (
-      <View style={styles.qrContainer}>
-        <View style={styles.qrHeader}>
-          <Text style={styles.qrTitle}>Check-in QR Code</Text>
-          <Text style={styles.qrSubtitle}>{selectedSafeHouse.name}</Text>
-        </View>
+  const handleCreateSafeHouse = async (data: any) => {
+    try {
+      setCreating(true);
+      
+      // For demo purposes, use fixed coordinates (Mumbai, India)
+      // In production, get user's current location
+      const latitude = 19.0760;
+      const longitude = 72.8777;
+      
+      await createSafeHouse({
+        name: data.name,
+        address: data.address,
+        latitude: latitude,
+        longitude: longitude,
+        capacity: parseInt(data.capacity),
+        facilities: data.facilities,
+        managerId: user?.id || '',
+      });
+      setShowCreateModal(false);
+      Alert.alert('Success', 'Safe house created successfully!');
+    } catch (error) {
+      console.error('Error creating safe house:', error);
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to create safe house. Please try again.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
-        <View style={styles.qrCodeContainer}>
-          <QRCode
-            value={JSON.stringify({
-              type: 'safehouse_checkin',
-              safeHouseId: selectedSafeHouse.id,
-              userId: user.id,
-              digiPin: user.digiPin,
-              timestamp: new Date().toISOString(),
-            })}
-            size={200}
-            backgroundColor={theme.colors.secondary}
-            color={theme.colors.primary}
-          />
-        </View>
+  const handleDeleteSafeHouse = async (safeHouse: SafeHouse) => {
+    if (safeHouse.managerId !== user?.id) {
+      Alert.alert('Error', 'You can only delete safe houses you created');
+      return;
+    }
 
-        <Text style={styles.qrInstructions}>
-          Show this QR code to a rescuer or safe house manager to check in
-        </Text>
+    if (safeHouse.currentOccupancy > 0) {
+      Alert.alert('Error', 'Cannot delete safe house with current occupants. Please ensure all people have checked out first.');
+      return;
+    }
 
-        <View style={styles.qrDetails}>
-          <Text style={styles.qrDetailLabel}>DigiPIN:</Text>
-          <Text style={styles.qrDetailValue}>{user.digiPin}</Text>
-        </View>
-
-        <View style={styles.qrButtons}>
-          <Button
-            title="Done"
-            onPress={() => {
-              setShowQRCode(false);
-              setCheckedIn(true);
-            }}
-            variant="accent"
-            style={styles.qrButton}
-          />
-          <Button
-            title="Cancel"
-            onPress={() => setShowQRCode(false)}
-            variant="secondary"
-            style={styles.qrButton}
-          />
-        </View>
-      </View>
+    Alert.alert(
+      'Delete Safe House',
+      `Are you sure you want to delete "${safeHouse.name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteSafeHouse(safeHouse.id, user?.id || '');
+              Alert.alert('Success', 'Safe house deleted successfully');
+            } catch (error) {
+              Alert.alert('Error', error instanceof Error ? error.message : 'Failed to delete safe house');
+            }
+          },
+        },
+      ]
     );
-  }
+  };
 
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Safe Houses</Text>
-        <Text style={styles.subtitle}>
-          Find shelter and check-in to safe locations
-        </Text>
-      </View>
+  const handleManageOccupancy = (safeHouse: SafeHouse) => {
+    setSelectedSafeHouse(safeHouse);
+    setShowOccupancyModal(true);
+  };
 
-      {/* Family Status */}
-      {user.familyMembers.length > 0 && (
-        <Card style={styles.familyStatusCard}>
-          <View style={styles.familyStatusHeader}>
-            <Users color={theme.colors.accent} size={20} />
-            <Text style={styles.familyStatusTitle}>Family Status</Text>
+  const handleScanForCheckIn = (safeHouse: SafeHouse) => {
+    setSelectedSafeHouse(safeHouse);
+    setShowQRScannerModal(true);
+  };
+
+  const handleShowPersonalQR = (safeHouse: SafeHouse) => {
+    setSelectedSafeHouse(safeHouse);
+    setShowPersonalQRModal(true);
+  };
+
+  const handleViewOccupants = (safeHouse: SafeHouse) => {
+    setSelectedSafeHouse(safeHouse);
+    setShowOccupantsModal(true);
+  };
+
+  const renderSafeHouse = (safeHouse: SafeHouse) => (
+    <Card key={safeHouse.id} style={styles.safeHouseCard}>
+      <View style={styles.safeHouseHeader}>
+        <View style={styles.safeHouseInfo}>
+          <Text style={styles.safeHouseName}>{safeHouse.name}</Text>
+          <View style={styles.safeHouseLocation}>
+            <MapPin color={theme.colors.onSurfaceVariant} size={16} />
+            <Text style={styles.safeHouseAddress}>{safeHouse.address}</Text>
           </View>
-          <View style={styles.familyMembers}>
-            {user.familyMembers.map((member) => (
-              <View key={member.id} style={styles.familyMember}>
-                <Text style={styles.familyMemberName}>{member.name}</Text>
-                <View style={styles.familyMemberStatus}>
-                  {member.isAtSafeHouse ? (
-                    <>
-                      <CheckCircle color={theme.colors.success} size={16} />
-                      <Text style={styles.familyMemberSafe}>Safe</Text>
-                    </>
-                  ) : (
-                    <Badge label="Not Checked In" variant="warning" size="small" />
-                  )}
-                </View>
+        </View>
+        <View style={styles.capacityBadge}>
+          <Users color={theme.colors.accent} size={16} />
+          <Text style={styles.capacityText}>
+            {safeHouse.currentOccupancy}/{safeHouse.capacity}
+          </Text>
+        </View>
+      </View>
+
+      {safeHouse.locationDigiPin && (
+        <View style={styles.digipinContainer}>
+          <Text style={styles.digipinLabel}>Location DIGIPIN:</Text>
+          <Text style={styles.digipinCode}>{safeHouse.locationDigiPin}</Text>
+        </View>
+      )}
+
+      {safeHouse.facilities && safeHouse.facilities.length > 0 && (
+        <View style={styles.facilitiesContainer}>
+          <Text style={styles.facilitiesLabel}>Available Facilities:</Text>
+          <View style={styles.facilitiesGrid}>
+            {safeHouse.facilities.map((facility, index) => (
+              <View key={index} style={styles.facilityTag}>
+                <Text style={styles.facilityText}>{facility}</Text>
               </View>
             ))}
           </View>
-        </Card>
+        </View>
       )}
 
-      {/* Safe Houses List */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Available Safe Houses</Text>
-          {isRescuer && (
+      <View style={styles.safeHouseActions}>
+        {!isRescuer ? (
+          // Civilian actions - Show admission status or QR code
+          isUserCheckedIn(safeHouse.id) ? (
+            // User is checked in - show admission status
+            <>
+              <View style={styles.admissionStatus}>
+                <View style={styles.admissionBadge}>
+                  <Text style={styles.checkIcon}>✓</Text>
+                  <Text style={styles.admissionText}>You're checked in</Text>
+                </View>
+                <Button
+                  title="Leave"
+                  onPress={() => handleLeaveComplex(safeHouse)}
+                  variant="danger"
+                  style={styles.leaveButton}
+                />
+              </View>
+            </>
+          ) : (
+            // User is not checked in - show normal actions
+            <>
+              <Button
+                title="Your QR Code"
+                onPress={() => handleShowPersonalQR(safeHouse)}
+                variant="secondary"
+                style={styles.actionButton}
+              />
+              <Button
+                title="View Occupants"
+                onPress={() => handleViewOccupants(safeHouse)}
+                variant="accent"
+                style={styles.actionButton}
+              />
+            </>
+          )
+        ) : (
+          // Rescuer actions
+          <>
             <Button
-              title="Add New"
-              onPress={() => Alert.alert('Add Safe House', 'Feature coming soon')}
-              variant="accent"
-              size="small"
+              title="Scan QR"
+              onPress={() => handleScanForCheckIn(safeHouse)}
+              variant="secondary"
+              style={styles.actionButton}
             />
+            {safeHouse.managerId === user?.id && (
+              <Button
+                title="Manage Capacity"
+                onPress={() => handleManageOccupancy(safeHouse)}
+                variant="accent"
+                style={styles.actionButton}
+              />
+            )}
+          </>
+        )}
+        {isRescuer && safeHouse.managerId === user?.id && (
+          <Button
+            title="Delete"
+            onPress={() => handleDeleteSafeHouse(safeHouse)}
+            variant="danger"
+            style={styles.deleteButton}
+          />
+        )}
+      </View>
+    </Card>
+  );
+
+  return (
+    <>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Safe Houses</Text>
+            <Text style={styles.subtitle}>
+              Find shelter and check-in to safe locations
+            </Text>
+          </View>
+          {isRescuer && (
+            <TouchableOpacity
+              style={styles.createButton}
+              onPress={() => {
+                setShowCreateModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Plus color={theme.colors.secondary} size={24} />
+            </TouchableOpacity>
           )}
         </View>
 
-        {safeHouses.map((safeHouse) => (
-          <Card key={safeHouse.id} style={styles.safeHouseCard}>
-            <View style={styles.safeHouseHeader}>
-              <View style={styles.safeHouseInfo}>
-                <Text style={styles.safeHouseName}>{safeHouse.name}</Text>
-                <View style={styles.safeHouseLocation}>
-                  <MapPin color={theme.colors.accent} size={16} />
-                  <Text style={styles.safeHouseAddress}>{safeHouse.address}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.occupancyContainer}>
-                <View style={styles.occupancyBar}>
-                  <View
+        {/* Safe Houses List */}
+        <View style={styles.safeHousesList}>
+          {loading ? (
+            <Text style={styles.loadingText}>Loading safe houses...</Text>
+          ) : safeHouses.length === 0 ? (
+            <Card style={styles.emptyState}>
+              <Text style={styles.emptyTitle}>No Safe Houses Available</Text>
+              <Text style={styles.emptySubtitle}>
+                {isRescuer 
+                  ? "Create the first safe house to help people find shelter."
+                  : "Safe houses will appear here when they become available."
+                }
+              </Text>
+            </Card>
+          ) : (
+            safeHouses.map(renderSafeHouse)
+          )}
+        </View>
+
+        {/* Add Test Data for Empty State */}
+        {isRescuer && safeHouses.length === 0 && (
+          <Card style={styles.emptyState}>
+            <Text style={styles.emptyTitle}>No Safe Houses Created</Text>
+            <Text style={styles.emptySubtitle}>Create your first safe house to help people find shelter.</Text>
+            <Button
+              title="Add Test Safe House"
+              onPress={async () => {
+                try {
+                  await createSafeHouse({
+                    name: "Emergency Community Center",
+                    address: "123 Relief Street, Mumbai, Maharashtra",
+                    latitude: 19.0760,
+                    longitude: 72.8777,
+                    capacity: 100,
+                    facilities: ['Food', 'Water', 'Medical Aid', 'Shelter'],
+                    managerId: user?.id || '',
+                  });
+                  Alert.alert('Success', 'Test safe house created!');
+                } catch (error) {
+                  console.error('Error creating test safe house:', error);
+                }
+              }}
+              variant="accent"
+              style={{ marginTop: theme.spacing.md }}
+            />
+          </Card>
+        )}
+
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+
+      {/* Create Safe House Modal */}
+      <CreateSafeHouseModal 
+        visible={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateSafeHouse={handleCreateSafeHouse}
+        loading={creating}
+      />
+
+      {/* Occupancy Management Modal */}
+      {selectedSafeHouse && (
+        <OccupancyManagementModal
+          visible={showOccupancyModal}
+          onClose={() => setShowOccupancyModal(false)}
+          safeHouse={selectedSafeHouse}
+          onUpdateOccupancy={updateOccupancy}
+        />
+      )}
+
+      {/* Personal QR Code Modal */}
+      {selectedSafeHouse && user && (
+        <PersonalQRModal
+          visible={showPersonalQRModal}
+          onClose={() => setShowPersonalQRModal(false)}
+          safeHouse={selectedSafeHouse}
+          user={user}
+        />
+      )}
+
+      {/* View Occupants Modal */}
+      {selectedSafeHouse && (
+        <ViewOccupantsModal
+          visible={showOccupantsModal}
+          onClose={() => setShowOccupantsModal(false)}
+          safeHouse={selectedSafeHouse}
+        />
+      )}
+
+      {/* QR Scanner Modal */}
+      {selectedSafeHouse && (
+        <QRScannerModal
+          visible={showQRScannerModal}
+          onClose={() => setShowQRScannerModal(false)}
+          safeHouse={selectedSafeHouse}
+          onUserCheckedIn={handleSuccessfulCheckIn}
+        />
+      )}
+    </>
+  );
+}
+
+// Create Safe House Modal Component
+function CreateSafeHouseModal({ 
+  visible, 
+  onClose, 
+  onCreateSafeHouse, 
+  loading 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  onCreateSafeHouse: (data: any) => void; 
+  loading: boolean;
+}) {
+  const [newSafeHouse, setNewSafeHouse] = useState({
+    name: '',
+    address: '',
+    capacity: '',
+    facilities: [] as string[],
+  });
+
+  const toggleFacility = (facility: string) => {
+    setNewSafeHouse(prev => ({
+      ...prev,
+      facilities: prev.facilities.includes(facility)
+        ? prev.facilities.filter(f => f !== facility)
+        : [...prev.facilities, facility]
+    }));
+  };
+
+  const handleCreate = () => {
+    if (!newSafeHouse.name || !newSafeHouse.address || !newSafeHouse.capacity) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+    onCreateSafeHouse(newSafeHouse);
+    setNewSafeHouse({ name: '', address: '', capacity: '', facilities: [] });
+  };
+
+  const resetForm = () => {
+    setNewSafeHouse({ name: '', address: '', capacity: '', facilities: [] });
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={handleClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Create Safe House</Text>
+            <TouchableOpacity onPress={handleClose} style={styles.modalCloseButton}>
+              <X color={theme.colors.onSurface} size={24} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Safe House Name *</Text>
+              <TextInput
+                style={styles.textInput}
+                value={newSafeHouse.name}
+                onChangeText={(text) => setNewSafeHouse(prev => ({ ...prev, name: text }))}
+                placeholder="e.g. Community Center"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Address *</Text>
+              <TextInput
+                style={[styles.textInput, styles.multilineInput]}
+                value={newSafeHouse.address}
+                onChangeText={(text) => setNewSafeHouse(prev => ({ ...prev, address: text }))}
+                placeholder="Full address of the safe house"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                multiline
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Capacity *</Text>
+              <TextInput
+                style={styles.textInput}
+                value={newSafeHouse.capacity}
+                onChangeText={(text) => setNewSafeHouse(prev => ({ ...prev, capacity: text }))}
+                placeholder="Maximum number of people"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Available Facilities</Text>
+              <View style={styles.facilitiesGrid}>
+                {['Food', 'Water', 'Medical Aid', 'Shelter', 'Communication', 'Power', 'Children Care'].map((facility) => (
+                  <TouchableOpacity
+                    key={facility}
                     style={[
-                      styles.occupancyFill,
-                      {
-                        width: `${(safeHouse.currentOccupancy / safeHouse.capacity) * 100}%`,
-                        backgroundColor: getOccupancyColor(safeHouse.currentOccupancy, safeHouse.capacity),
-                      },
+                      styles.facilityChip,
+                      newSafeHouse.facilities.includes(facility) && styles.facilityChipSelected
                     ]}
-                  />
-                </View>
-                <Text style={styles.occupancyText}>
-                  {safeHouse.currentOccupancy}/{safeHouse.capacity}
+                    onPress={() => toggleFacility(facility)}
+                  >
+                    <Text style={[
+                      styles.facilityChipText,
+                      newSafeHouse.facilities.includes(facility) && styles.facilityChipTextSelected
+                    ]}>
+                      {facility}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <Button title="Cancel" onPress={handleClose} variant="secondary" />
+            <Button 
+              title={loading ? "Creating..." : "Create"} 
+              onPress={handleCreate} 
+              variant="accent" 
+              disabled={loading}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// Occupancy Management Modal Component
+function OccupancyManagementModal({ 
+  visible, 
+  onClose, 
+  safeHouse, 
+  onUpdateOccupancy 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  safeHouse: SafeHouse;
+  onUpdateOccupancy: (safeHouseId: string, occupancyChange: number) => Promise<number>;
+}) {
+  const [newCapacity, setNewCapacity] = useState(safeHouse.capacity.toString());
+  const [customChange, setCustomChange] = useState('');
+
+  const handleUpdateCapacity = async () => {
+    const capacity = parseInt(newCapacity);
+    if (isNaN(capacity) || capacity < 0) {
+      Alert.alert('Error', 'Please enter a valid capacity number');
+      return;
+    }
+
+    if (capacity < safeHouse.currentOccupancy) {
+      Alert.alert('Error', `Capacity cannot be less than current occupancy (${safeHouse.currentOccupancy})`);
+      return;
+    }
+
+    Alert.alert(
+      'Update Capacity',
+      `Change maximum capacity from ${safeHouse.capacity} to ${capacity}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Update', onPress: () => {
+          Alert.alert('Info', 'Capacity update feature coming soon');
+          // TODO: Implement updateCapacity backend call
+          onClose();
+        }}
+      ]
+    );
+  };
+
+  const handleQuickOccupancyChange = async (change: number) => {
+    try {
+      const newOccupancy = await onUpdateOccupancy(safeHouse.id, change);
+      Alert.alert('Success', `Occupancy updated to ${newOccupancy}/${safeHouse.capacity}`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update occupancy');
+    }
+  };
+
+  const handleCustomOccupancyChange = async () => {
+    const change = parseInt(customChange);
+    if (isNaN(change)) {
+      Alert.alert('Error', 'Please enter a valid number');
+      return;
+    }
+
+    if (safeHouse.currentOccupancy + change < 0) {
+      Alert.alert('Error', 'Occupancy cannot be negative');
+      return;
+    }
+
+    if (safeHouse.currentOccupancy + change > safeHouse.capacity) {
+      Alert.alert('Error', 'Occupancy cannot exceed capacity');
+      return;
+    }
+
+    await handleQuickOccupancyChange(change);
+    setCustomChange('');
+  };
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Manage {safeHouse.name}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <X color={theme.colors.onSurface} size={24} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {/* Current Status */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Current Status</Text>
+              <View style={styles.statusContainer}>
+                <Text style={styles.occupancyStatusText}>
+                  Occupancy: {safeHouse.currentOccupancy}/{safeHouse.capacity} people
+                </Text>
+                <Text style={styles.occupancyStatusText}>
+                  Available Space: {safeHouse.capacity - safeHouse.currentOccupancy} spots
                 </Text>
               </View>
             </View>
 
-            <Badge
-              label={getOccupancyStatus(safeHouse.currentOccupancy, safeHouse.capacity)}
-              variant={
-                safeHouse.currentOccupancy / safeHouse.capacity > 0.8
-                  ? 'danger'
-                  : safeHouse.currentOccupancy / safeHouse.capacity > 0.6
-                  ? 'warning'
-                  : 'success'
-              }
-              size="small"
-            />
-
-            {/* Facilities */}
-            <View style={styles.facilities}>
-              <Text style={styles.facilitiesTitle}>Available:</Text>
-              <View style={styles.facilitiesList}>
-                {safeHouse.facilities.map((facility, index) => (
-                  <Badge
-                    key={index}
-                    label={facility}
-                    variant="primary"
-                    size="small"
-                  />
-                ))}
+            {/* Quick Occupancy Changes */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Quick Occupancy Changes</Text>
+              <View style={styles.quickButtonsContainer}>
+                <Button
+                  title="+1 Person"
+                  onPress={() => handleQuickOccupancyChange(1)}
+                  variant="accent"
+                  style={styles.quickButton}
+                />
+                <Button
+                  title="-1 Person"
+                  onPress={() => handleQuickOccupancyChange(-1)}
+                  variant="secondary"
+                  style={styles.quickButton}
+                />
               </View>
             </View>
 
-            {/* Actions */}
-            <View style={styles.safeHouseActions}>
-              <Button
-                title="Check In"
-                onPress={() => checkIn(safeHouse)}
-                variant="accent"
-                size="small"
-                style={styles.actionButton}
-              />
-              <TouchableOpacity
-                style={styles.directionsButton}
-                onPress={() => getDirections(safeHouse)}
-              >
-                <Navigation color={theme.colors.accent} size={16} />
-                <Text style={styles.directionsText}>Directions</Text>
-              </TouchableOpacity>
+            {/* Custom Occupancy Change */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Custom Occupancy Change</Text>
+              <View style={styles.customChangeContainer}>
+                <TextInput
+                  style={[styles.textInput, styles.customChangeInput]}
+                  value={customChange}
+                  onChangeText={setCustomChange}
+                  placeholder="+5 or -3"
+                  placeholderTextColor={theme.colors.onSurfaceVariant}
+                  keyboardType="numeric"
+                />
+                <Button
+                  title="Apply"
+                  onPress={handleCustomOccupancyChange}
+                  variant="accent"
+                  style={styles.applyButton}
+                />
+              </View>
             </View>
-          </Card>
-        ))}
-      </View>
 
-      {/* Rescuer Tools */}
-      {isRescuer && (
-        <Card style={styles.rescuerToolsCard}>
-          <Text style={styles.rescuerToolsTitle}>Rescuer Tools</Text>
-          <View style={styles.rescuerTools}>
-            <Button
-              title="Scan QR Code"
-              onPress={() => Alert.alert('QR Scanner', 'Opening QR code scanner...')}
-              variant="primary"
-              style={styles.rescuerTool}
-            />
-            <Button
-              title="Manage Occupancy"
-              onPress={() => Alert.alert('Occupancy', 'Opening occupancy management...')}
-              variant="secondary"
-              style={styles.rescuerTool}
+            {/* Update Maximum Capacity */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Maximum Capacity</Text>
+              <TextInput
+                style={styles.textInput}
+                value={newCapacity}
+                onChangeText={setNewCapacity}
+                placeholder="Maximum number of people"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                keyboardType="numeric"
+              />
+              <Button
+                title="Update Capacity"
+                onPress={handleUpdateCapacity}
+                variant="secondary"
+                style={{ marginTop: theme.spacing.sm }}
+              />
+            </View>
+          </ScrollView>
+
+          <View style={styles.modalActions}>
+            <Button 
+              title="Close" 
+              onPress={onClose} 
+              variant="secondary" 
             />
           </View>
-        </Card>
-      )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
-      <View style={styles.bottomSpacer} />
-    </ScrollView>
+// Personal QR Modal Component
+function PersonalQRModal({ 
+  visible, 
+  onClose, 
+  safeHouse,
+  user 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  safeHouse: SafeHouse;
+  user: any;
+}) {
+  const qrValue = JSON.stringify({
+    type: 'user_profile',
+    id: user.id,
+    name: user.name,
+    digiPin: user.digiPin,
+    phone: user.phone || '',
+    profileImage: user.profileImage || '',
+    role: user.role,
+  });
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContainer, { minHeight: '80%' }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Your Identity QR</Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <X color={theme.colors.onSurface} size={24} />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.modalContent}>
+            <Text style={styles.qrTitle}>{user.name}</Text>
+            <Text style={styles.qrSubtitle}>Personal Identity QR Code</Text>
+            
+            <View style={styles.qrCodeContainer}>
+              <QRCode
+                value={qrValue}
+                size={200}
+                color={theme.colors.onBackground}
+                backgroundColor={theme.colors.background}
+              />
+            </View>
+            
+            <Text style={styles.qrInstructions}>
+              Show this QR code to a rescuer to check into "{safeHouse.name}"
+            </Text>
+            
+            <View style={styles.qrDetails}>
+              <Text style={styles.qrDetailLabel}>Your DIGIPIN:</Text>
+              <Text style={styles.qrDetailValue}>{user.digiPin}</Text>
+            </View>
+            
+            <View style={styles.qrDetails}>
+              <Text style={styles.qrDetailLabel}>Safe House:</Text>
+              <Text style={styles.qrDetailValue}>{safeHouse.name}</Text>
+            </View>
+          </View>
+          
+          <View style={styles.modalActions}>
+            <Button 
+              title="Close" 
+              onPress={onClose} 
+              variant="secondary" 
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// View Occupants Modal Component
+function ViewOccupantsModal({ 
+  visible, 
+  onClose, 
+  safeHouse 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  safeHouse: SafeHouse;
+}) {
+  const [occupants, setOccupants] = useState<any[]>([]);
+  
+  // Import the query hook directly
+  const occupantsQuery = useQuery(
+    api.safehouses.getSafeHouseOccupants, 
+    visible ? { safeHouseId: safeHouse.id as any } : "skip"
+  );
+  
+  // Update occupants when query data changes
+  useEffect(() => {
+    if (occupantsQuery) {
+      setOccupants(occupantsQuery);
+    }
+  }, [occupantsQuery]);
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContainer, { minHeight: '75%' }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{safeHouse.name} - Occupants</Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <X color={theme.colors.onSurface} size={24} />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Safe House Details</Text>
+              <View style={styles.statusContainer}>
+                <Text style={styles.occupancyStatusText}>
+                  📍 {safeHouse.address}
+                </Text>
+                <Text style={styles.occupancyStatusText}>
+                  📱 DIGIPIN: {safeHouse.locationDigiPin}
+                </Text>
+                <Text style={styles.occupancyStatusText}>
+                  👥 Occupancy: {safeHouse.currentOccupancy}/{safeHouse.capacity}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Current Occupants ({safeHouse.currentOccupancy})</Text>
+              {!occupantsQuery ? (
+                <View style={styles.statusContainer}>
+                  <Text style={styles.occupancyStatusText}>Loading occupants...</Text>
+                </View>
+              ) : occupants.length > 0 ? (
+                occupants.map((occupant, index) => (
+                  <View key={occupant.id} style={styles.statusContainer}>
+                    <Text style={styles.occupancyStatusText}>
+                      👤 {occupant.name}
+                    </Text>
+                    <Text style={[styles.occupancyStatusText, { fontSize: 12 }]}>
+                      DIGIPIN: {occupant.digiPin} • Check-in: {occupant.checkInTimeFormatted}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.statusContainer}>
+                  <Text style={styles.occupancyStatusText}>
+                    No occupants currently checked in
+                  </Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+          
+          <View style={styles.modalActions}>
+            <Button 
+              title="Close" 
+              onPress={onClose} 
+              variant="secondary" 
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// QR Scanner Modal Component  
+function QRScannerModal({ 
+  visible, 
+  onClose, 
+  safeHouse,
+  onUserCheckedIn 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  safeHouse: SafeHouse;
+  onUserCheckedIn: (safeHouseId: string, userId: string) => void;
+}) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [isScanning, setIsScanning] = useState(true);
+  const { checkInToSafeHouse } = useSafeHouses();
+  const { user } = useAuth(); // Get current user (rescuer)
+
+  const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
+    if (!isScanning) return; // Prevent multiple scans
+    
+    setIsScanning(false); // Stop scanning immediately
+    
+    try {
+      const qrData = JSON.parse(data);
+      
+      // Check if it's a personal identity QR (same format as user profile QR)
+      if (qrData.type !== 'user_profile' || !qrData.name || !qrData.id) {
+        Alert.alert('Invalid QR Code', 'Please scan a civilian\'s personal profile QR code.', [
+          { text: 'OK', onPress: () => setIsScanning(true) } // Allow scanning again
+        ]);
+        return;
+      }
+
+      // Actually check them into the safe house using backend with REAL user data
+      try {
+        await checkInToSafeHouse(
+          safeHouse.id,
+          qrData.id, // Use the REAL scanned user ID
+          qrData.name, // Use the REAL scanned user name
+          user?.id || '' // Pass the rescuer ID who is scanning
+        );
+        
+        Alert.alert(
+          'Check-in Successful!',
+          `${qrData.name} (DIGIPIN: ${qrData.digiPin || 'N/A'}) has been checked into ${safeHouse.name}`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Update check-in status through callback
+                onUserCheckedIn(safeHouse.id, qrData.id);
+                onClose();
+              }
+            }
+          ]
+        );
+      } catch (backendError) {
+        Alert.alert(
+          'Check-in Failed',
+          backendError instanceof Error ? backendError.message : 'Unable to check into safe house',
+          [
+            { text: 'OK', onPress: () => setIsScanning(true) } // Allow trying again
+          ]
+        );
+      }
+    } catch (error) {
+      Alert.alert('Invalid QR Code', 'Unable to read QR code data.', [
+        { text: 'OK', onPress: () => setIsScanning(true) } // Allow scanning again
+      ]);
+    }
+  };
+
+  // Reset scanning when modal opens
+  useEffect(() => {
+    if (visible) {
+      setIsScanning(true);
+    }
+  }, [visible]);
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={false}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.scannerContainer}>
+        <View style={styles.scannerHeader}>
+          <Text style={styles.scannerTitle}>Scan Civilian QR Code</Text>
+          <TouchableOpacity onPress={onClose}>
+            <X color={theme.colors.secondary} size={24} />
+          </TouchableOpacity>
+        </View>
+        
+        {!permission ? (
+          <View style={styles.permissionContainer}>
+            <Text style={styles.permissionText}>Requesting camera permission...</Text>
+          </View>
+        ) : !permission.granted ? (
+          <View style={styles.permissionContainer}>
+            <Text style={styles.permissionText}>No access to camera</Text>
+            <Button
+              title="Grant Permission"
+              onPress={requestPermission}
+              variant="accent"
+            />
+          </View>
+        ) : (
+          <CameraView
+            style={styles.scanner}
+            facing="back"
+            barcodeScannerSettings={{
+              barcodeTypes: ["qr"],
+            }}
+            onBarcodeScanned={isScanning ? handleBarCodeScanned : undefined}
+          />
+        )}
+        
+        <View style={styles.scannerOverlay}>
+          <View style={styles.scannerFrame} />
+          <Text style={styles.scannerInstructions}>
+            {isScanning 
+              ? `Point your camera at a civilian's profile QR code to check them into ${safeHouse.name}`
+              : 'Processing...'}
+          </Text>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -312,6 +1041,9 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     paddingTop: theme.spacing.xxl,
     backgroundColor: theme.colors.secondary,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
   title: {
     ...theme.typography.h1,
@@ -321,6 +1053,12 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.xs,
+  },
+  createButton: {
+    backgroundColor: theme.colors.accent,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.sm,
+    ...theme.shadows.medium,
   },
   familyStatusCard: {
     margin: theme.spacing.md,
@@ -349,28 +1087,48 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.onBackground,
   },
-  familyMemberStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  statusBadge: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
   },
-  familyMemberSafe: {
-    ...theme.typography.caption,
-    color: theme.colors.success,
-    marginLeft: theme.spacing.xs,
-    fontWeight: '500',
+  statusSafe: {
+    backgroundColor: theme.colors.success,
   },
-  section: {
+  statusAtRisk: {
+    backgroundColor: theme.colors.warning,
+  },
+  statusUnknown: {
+    backgroundColor: theme.colors.outline,
+  },
+  statusText: {
+    ...theme.typography.small,
+    color: theme.colors.secondary,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  safeHousesList: {
     padding: theme.spacing.md,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.md,
+  loadingText: {
+    ...theme.typography.body,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
+    marginTop: theme.spacing.xl,
   },
-  sectionTitle: {
-    ...theme.typography.h2,
+  emptyState: {
+    alignItems: 'center',
+    padding: theme.spacing.xl,
+  },
+  emptyTitle: {
+    ...theme.typography.h3,
     color: theme.colors.onBackground,
+    marginBottom: theme.spacing.sm,
+  },
+  emptySubtitle: {
+    ...theme.typography.body,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: 'center',
   },
   safeHouseCard: {
     marginBottom: theme.spacing.md,
@@ -379,7 +1137,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: theme.spacing.sm,
+    marginBottom: theme.spacing.md,
   },
   safeHouseInfo: {
     flex: 1,
@@ -397,65 +1155,70 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.onSurfaceVariant,
     marginLeft: theme.spacing.xs,
-  },
-  occupancyContainer: {
-    alignItems: 'flex-end',
-    marginLeft: theme.spacing.md,
-  },
-  occupancyBar: {
-    width: 60,
-    height: 6,
-    backgroundColor: theme.colors.surfaceVariant,
-    borderRadius: 3,
-    marginBottom: theme.spacing.xs,
-    overflow: 'hidden',
-  },
-  occupancyFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  occupancyText: {
-    ...theme.typography.small,
-    color: theme.colors.onSurfaceVariant,
-    fontWeight: '600',
-  },
-  facilities: {
-    marginVertical: theme.spacing.sm,
-  },
-  facilitiesTitle: {
-    ...theme.typography.caption,
-    color: theme.colors.onSurfaceVariant,
-    marginBottom: theme.spacing.xs,
-  },
-  facilitiesList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.xs,
-  },
-  safeHouseActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: theme.spacing.md,
-    paddingTop: theme.spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.outline,
-  },
-  actionButton: {
     flex: 1,
-    marginRight: theme.spacing.sm,
   },
-  directionsButton: {
+  capacityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: theme.colors.surfaceVariant,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
   },
-  directionsText: {
+  capacityText: {
     ...theme.typography.body,
     color: theme.colors.accent,
     marginLeft: theme.spacing.xs,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  digipinContainer: {
+    backgroundColor: theme.colors.accent + '15',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.md,
+  },
+  digipinLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.accent,
+    fontWeight: '600',
+    marginBottom: theme.spacing.xs,
+  },
+  digipinCode: {
+    ...theme.typography.h3,
+    color: theme.colors.accent,
+    fontFamily: 'monospace',
+  },
+  facilitiesContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  facilitiesLabel: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    fontWeight: '600',
+    marginBottom: theme.spacing.sm,
+  },
+  facilitiesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  facilityTag: {
+    backgroundColor: theme.colors.surfaceVariant,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.borderRadius.sm,
+  },
+  facilityText: {
+    ...theme.typography.small,
+    color: theme.colors.onSurfaceVariant,
+  },
+  safeHouseActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.md,
+  },
+  actionButton: {
+    flex: 1,
   },
   rescuerToolsCard: {
     margin: theme.spacing.md,
@@ -470,37 +1233,166 @@ const styles = StyleSheet.create({
   },
   rescuerTools: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
+    gap: theme.spacing.md,
   },
   rescuerTool: {
     flex: 1,
   },
-  qrContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: theme.spacing.lg,
+  bottomSpacer: {
+    height: theme.spacing.xl,
   },
-  qrHeader: {
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.lg,
+    padding: 0,
+    margin: theme.spacing.md,
+    maxHeight: '90%',
+    minHeight: '70%',
+    width: '95%',
+    maxWidth: 500,
+    ...theme.shadows.large,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+  },
+  modalTitle: {
+    ...theme.typography.h2,
+    color: theme.colors.onBackground,
+  },
+  modalCloseButton: {
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.xs,
+  },
+  modalContent: {
+    flex: 1,
+    padding: theme.spacing.lg,
+    minHeight: 200,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+    padding: theme.spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.outline,
+  },
+  // Form styles
+  inputGroup: {
     marginBottom: theme.spacing.xl,
   },
+  inputLabel: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    fontWeight: '600',
+    fontSize: 16,
+    marginBottom: theme.spacing.sm,
+  },
+  textInput: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    fontSize: 16,
+    minHeight: 52,
+    color: theme.colors.onSurface,
+  },
+  multilineInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  // Facilities styles
+  facilityChip: {
+    backgroundColor: theme.colors.surfaceVariant,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+  },
+  facilityChipSelected: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+  facilityChipText: {
+    ...theme.typography.body,
+    color: theme.colors.onSurfaceVariant,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  facilityChipTextSelected: {
+    color: theme.colors.secondary,
+    fontWeight: '600',
+  },
+  // Occupancy Management Modal styles
+  statusContainer: {
+    backgroundColor: theme.colors.secondary,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+  },
+  occupancyStatusText: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    marginBottom: theme.spacing.xs,
+    fontWeight: '500',
+  },
+  quickButtonsContainer: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+  },
+  quickButton: {
+    flex: 1,
+  },
+  customChangeContainer: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+  },
+  customChangeInput: {
+    flex: 1,
+  },
+  applyButton: {
+    minWidth: 80,
+  },
+  // Delete button
+  deleteButton: {
+    marginLeft: theme.spacing.sm,
+    minWidth: 80,
+  },
+  // QR styles for Personal QR Modal
   qrTitle: {
     ...theme.typography.h2,
     color: theme.colors.onBackground,
+    marginBottom: theme.spacing.xs,
+    textAlign: 'center',
   },
   qrSubtitle: {
     ...theme.typography.body,
     color: theme.colors.onSurfaceVariant,
     textAlign: 'center',
-    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.lg,
   },
   qrCodeContainer: {
     backgroundColor: theme.colors.secondary,
     padding: theme.spacing.lg,
     borderRadius: theme.borderRadius.lg,
     marginBottom: theme.spacing.lg,
+    alignItems: 'center',
     ...theme.shadows.medium,
   },
   qrInstructions: {
@@ -513,7 +1405,7 @@ const styles = StyleSheet.create({
   qrDetails: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.xl,
+    marginBottom: theme.spacing.sm,
   },
   qrDetailLabel: {
     ...theme.typography.body,
@@ -526,16 +1418,93 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'monospace',
   },
-  qrButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.md,
+  // Admission status styles
+  admissionStatus: {
     width: '100%',
-    maxWidth: 280,
   },
-  qrButton: {
+  admissionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.success + '20',
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.success,
+  },
+  checkIcon: {
+    fontSize: 20,
+    color: theme.colors.success,
+    fontWeight: 'bold',
+    marginRight: theme.spacing.sm,
+  },
+  admissionText: {
+    ...theme.typography.body,
+    color: theme.colors.success,
+    fontWeight: '600',
+  },
+  leaveButton: {
+    width: '100%',
+  },
+  // Scanner styles (copied from profile.tsx)
+  scannerContainer: {
+    flex: 1,
+    backgroundColor: 'black',
+  },
+  scannerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+    paddingTop: theme.spacing.xxl,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    zIndex: 1,
+  },
+  scannerTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.secondary,
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+  },
+  permissionText: {
+    ...theme.typography.body,
+    color: theme.colors.secondary,
+    textAlign: 'center',
+    marginBottom: theme.spacing.lg,
+  },
+  scanner: {
     flex: 1,
   },
-  bottomSpacer: {
-    height: theme.spacing.xl,
+  scannerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scannerFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 2,
+    borderColor: theme.colors.accent,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: 'transparent',
+  },
+  scannerInstructions: {
+    ...theme.typography.body,
+    color: theme.colors.secondary,
+    textAlign: 'center',
+    marginTop: theme.spacing.xl,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.md,
   },
 });

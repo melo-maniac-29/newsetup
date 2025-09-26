@@ -15,6 +15,10 @@ export default defineSchema({
     isActive: v.boolean(),
     lastSeen: v.number(),
     
+    // Safe house tracking
+    currentSafeHouseId: v.optional(v.id("safeHouses")),
+    checkInTime: v.optional(v.number()),
+    
     // Location for real-time tracking
     currentLocation: v.optional(v.object({
       latitude: v.number(),
@@ -92,6 +96,7 @@ export default defineSchema({
       latitude: v.number(),
       longitude: v.number(),
     }),
+    locationDigiPin: v.string(), // DigiPIN based on safe house location
     capacity: v.number(),
     currentOccupancy: v.number(),
     facilities: v.array(v.string()),

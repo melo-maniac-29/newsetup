@@ -12,6 +12,8 @@ export function useSafeHouses() {
   const checkInMutation = useMutation(api.safehouses.checkInUser);
   const checkOutMutation = useMutation(api.safehouses.checkOutUser);
   const updateOccupancyMutation = useMutation(api.safehouses.updateOccupancy);
+  const createSafeHouseMutation = useMutation(api.safehouses.createSafeHouse);
+  const deleteSafeHouseMutation = useMutation(api.safehouses.deleteSafeHouse);
 
   // Helper function to convert Convex safe house to app format
   const convertConvexSafeHouse = (convexHouse: any): SafeHouse => {
@@ -20,6 +22,7 @@ export function useSafeHouses() {
       name: convexHouse.name,
       address: convexHouse.address,
       location: convexHouse.location,
+      locationDigiPin: convexHouse.locationDigiPin || 'PENDING-LOCATION',
       capacity: convexHouse.capacity,
       currentOccupancy: convexHouse.currentOccupancy,
       facilities: convexHouse.facilities,
@@ -51,15 +54,16 @@ export function useSafeHouses() {
     safeHouseId: string,
     userId: string,
     userName: string,
-    qrCode: string
+    scannedBy: string // Rescuer who scanned the QR
   ): Promise<boolean> => {
     try {
       setLoading(true);
       
       await checkInMutation({ 
         userId: userId as Id<'users'>, 
+        userName: userName, // Pass the user name
         safeHouseId: safeHouseId as Id<'safeHouses'>, 
-        qrCode 
+        scannedBy: scannedBy as Id<'users'>
       });
       
       return true;
@@ -69,6 +73,24 @@ export function useSafeHouses() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getUserCheckInStatus = async (userId: string): Promise<{
+    isCheckedIn: boolean;
+    currentSafeHouse?: SafeHouse;
+    checkInTime?: string;
+  }> => {
+    // This should be implemented with a direct query call when needed
+    return { isCheckedIn: false };
+  };
+
+  const getSafeHouseOccupants = async (safeHouseId: string): Promise<any[]> => {
+    // This should be implemented with a direct query call when needed
+    return [];
+  };
+
+  const getCheckInHistory = async (): Promise<any[]> => {
+    return [];
   };
 
   const checkOutFromSafeHouse = async (userId: string, safeHouseId: string): Promise<boolean> => {
@@ -89,16 +111,35 @@ export function useSafeHouses() {
     }
   };
 
-  const getUserCheckInStatus = async (userId: string): Promise<{
-    isCheckedIn: boolean;
-    currentSafeHouse?: SafeHouse;
-    checkInTime?: string;
-  }> => {
-    return { isCheckedIn: false };
-  };
-
-  const getCheckInHistory = async (): Promise<any[]> => {
-    return [];
+  const createSafeHouse = async (safeHouseData: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    capacity: number;
+    facilities: string[];
+    managerId: string;
+  }): Promise<{ safeHouseId: string; locationDigiPin: string }> => {
+    try {
+      setLoading(true);
+      
+      const result = await createSafeHouseMutation({
+        name: safeHouseData.name,
+        address: safeHouseData.address,
+        latitude: safeHouseData.latitude,
+        longitude: safeHouseData.longitude,
+        capacity: safeHouseData.capacity,
+        facilities: safeHouseData.facilities,
+        managerId: safeHouseData.managerId as Id<'users'>,
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('Error creating safe house:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Calculate distance between two coordinates in kilometers
@@ -118,6 +159,42 @@ export function useSafeHouses() {
     return deg * (Math.PI/180);
   };
 
+  const deleteSafeHouse = async (safeHouseId: string, managerId: string): Promise<boolean> => {
+    try {
+      setLoading(true);
+      
+      await deleteSafeHouseMutation({
+        safeHouseId: safeHouseId as Id<'safeHouses'>,
+        managerId: managerId as Id<'users'>,
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting safe house:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateOccupancy = async (safeHouseId: string, occupancyChange: number): Promise<number> => {
+    try {
+      setLoading(true);
+      
+      const newOccupancy = await updateOccupancyMutation({
+        safeHouseId: safeHouseId as Id<'safeHouses'>,
+        occupancyChange: occupancyChange,
+      });
+      
+      return newOccupancy;
+    } catch (error) {
+      console.error('Error updating occupancy:', error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     safeHouses,
     loading,
@@ -125,7 +202,11 @@ export function useSafeHouses() {
     getSafeHouseById,
     checkInToSafeHouse,
     checkOutFromSafeHouse,
+    createSafeHouse,
+    deleteSafeHouse,
+    updateOccupancy,
     getUserCheckInStatus,
     getCheckInHistory,
+    getSafeHouseOccupants,
   };
 }
