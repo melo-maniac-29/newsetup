@@ -42,7 +42,7 @@ export default function RescueScreen() {
   // Get real-time data
   const activeSOS = getActiveSOSRequests();
   // Get ALL SOS history globally (not just current user)
-  const allGlobalSOS = useQuery(api.sos.getAllSOSRequests) || [];
+  const allGlobalSOS = getAllSOSRequests();
   const sosHistory = allGlobalSOS.filter((sos: any) => sos.status === 'rescued' || sos.status === 'cancelled');
   const assignedHazards = getHazardsByStatus('assigned');
   const verifiedHazards = getHazardsByStatus('verified');
@@ -51,7 +51,7 @@ export default function RescueScreen() {
   // Get priority for SOS requests
   const getSOSPriority = (sos: any) => {
     const now = Date.now();
-    const sosTime = new Date(sos.timestamp).getTime();
+    const sosTime = sos.timestamp || sos._creationTime;
     const timeDiff = (now - sosTime) / (1000 * 60); // minutes
     
     if (timeDiff > 30) return 'critical';
@@ -127,10 +127,11 @@ export default function RescueScreen() {
   const contactUser = (sosData: any) => {
     // In a real app, you'd fetch user phone from database using sosData.userId
     const userPhone = sosData.userPhone || `+91-${Math.floor(Math.random() * 9000000000) + 1000000000}`; // Demo phone
+    const sosId = sosData._id || sosData.id;
     
     Alert.alert(
       'Call SOS User',
-      `Call the person who requested help?\n\nPhone: ${userPhone}\nDigiPIN: ${sosData.digiPin}`,
+      `Call the person who requested help?\n\nUser ID: ${sosData.userId?.slice(-6) || 'Unknown'}\nPhone: ${userPhone}\nDigiPIN: ${sosData.digiPin}\nStatus: ${sosData.status}`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -158,10 +159,14 @@ export default function RescueScreen() {
     const time = new Date(timestamp);
     const diffInMinutes = Math.floor((now.getTime() - time.getTime()) / (1000 * 60));
     
-    if (diffInMinutes < 60) {
+    if (diffInMinutes < 1) {
+      return 'Just now';
+    } else if (diffInMinutes < 60) {
       return `${diffInMinutes}m ago`;
-    } else {
+    } else if (diffInMinutes < 1440) {
       return `${Math.floor(diffInMinutes / 60)}h ago`;
+    } else {
+      return `${Math.floor(diffInMinutes / 1440)}d ago`;
     }
   };
 
@@ -220,10 +225,10 @@ export default function RescueScreen() {
         {/* SOS Tasks */}
         {activeTab === 'sos' && (
           <View style={styles.section}>
-            {activeSOS.map((sos) => {
+            {activeSOS.map((sos, index) => {
               const priority = getSOSPriority(sos);
               return (
-                <Card key={sos.id} style={styles.taskCard}>
+                <Card key={sos.id || `active-sos-${index}`} style={styles.taskCard}>
                   <View style={styles.taskHeader}>
                     <View style={styles.taskInfo}>
                       <StatusIndicator status={sos.status} size="medium" />
@@ -310,10 +315,10 @@ export default function RescueScreen() {
         {/* SOS History */}
         {activeTab === 'history' && (
           <View style={styles.section}>
-            {sosHistory.map((sos: any) => {
+            {sosHistory.map((sos: any, index: number) => {
               const priority = getSOSPriority(sos);
               return (
-                <Card key={sos.id} style={styles.taskCard}>
+                <Card key={sos._id || sos.id || `history-sos-${index}`} style={styles.taskCard}>
                   <View style={styles.taskHeader}>
                     <View style={styles.taskInfo}>
                       <StatusIndicator status={sos.status} size="medium" />
@@ -323,7 +328,7 @@ export default function RescueScreen() {
                         size="small"
                       />
                     </View>
-                    <Text style={styles.taskTime}>{getTimeAgo(sos.timestamp)}</Text>
+                    <Text style={styles.taskTime}>{getTimeAgo(new Date(sos.timestamp || sos._creationTime).toISOString())}</Text>
                   </View>
 
                   <View style={styles.taskDetails}>
@@ -387,8 +392,8 @@ export default function RescueScreen() {
         {/* Hazard Tasks */}
         {activeTab === 'hazards' && (
           <View style={styles.section}>
-            {[...assignedHazards, ...verifiedHazards].map((hazard) => (
-              <Card key={hazard.id} style={styles.taskCard}>
+            {[...assignedHazards, ...verifiedHazards].map((hazard, index) => (
+              <Card key={hazard.id || `hazard-${index}`} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
                   <View style={styles.taskInfo}>
                     <Text style={styles.taskTitle}>{hazard.title}</Text>
@@ -434,8 +439,8 @@ export default function RescueScreen() {
         {/* Safe House Management */}
         {activeTab === 'safehouses' && (
           <View style={styles.section}>
-            {activeSafeHouses.map((safeHouse) => (
-              <Card key={safeHouse.id} style={styles.taskCard}>
+            {activeSafeHouses.map((safeHouse, index) => (
+              <Card key={safeHouse.id || `safehouse-${index}`} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
                   <Text style={styles.taskTitle}>{safeHouse.name}</Text>
                   <Text style={styles.taskTime}>
@@ -583,7 +588,7 @@ function ViewOccupantsModal({
                 </View>
               ) : occupants.length > 0 ? (
                 occupants.map((occupant, index) => (
-                  <View key={occupant.id} style={styles.statusContainer}>
+                  <View key={occupant.id || `occupant-${index}`} style={styles.statusContainer}>
                     <Text style={styles.occupancyStatusText}>
                       👤 {occupant.name}
                     </Text>

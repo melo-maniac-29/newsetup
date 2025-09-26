@@ -18,7 +18,7 @@ export function useSOS(userId?: string) {
       location: convexSOS.location,
       status: convexSOS.status,
       digiPin: convexSOS.digiPin,
-      timestamp: new Date(convexSOS.timestamp).toISOString(),
+      timestamp: new Date(convexSOS.timestamp || convexSOS._creationTime).toISOString(),
       rescuerId: convexSOS.rescuerId,
       notes: convexSOS.notes,
       photos: convexSOS.photos,
@@ -35,6 +35,9 @@ export function useSOS(userId?: string) {
 
   // Query for active SOS requests (for rescuers)
   const activeSOSRequestsQuery = useQuery(api.sos.getActiveSOSRequests);
+  
+  // Query for ALL SOS requests globally (for rescuer dashboard)
+  const allSOSRequestsQuery = useQuery(api.sos.getAllSOSRequests);
 
   // Get the most recent active SOS request (not cancelled or rescued)
   const sosRequest = getUserSOSRequests?.find(sos => 
@@ -130,14 +133,19 @@ export function useSOS(userId?: string) {
     ) || [];
   };
 
-  // Get all SOS requests for the user
-  const getAllSOSRequests = (): SOSRequest[] => {
+  // Get all SOS requests for the current user only
+  const getUserAllSOSRequests = (): SOSRequest[] => {
     return getUserSOSRequests?.map(convertConvexSOSToSOS) || [];
   };
 
   // Get active SOS requests for rescuers
   const getActiveSOSRequests = (): SOSRequest[] => {
     return activeSOSRequestsQuery?.map(convertConvexSOSToSOS) || [];
+  };
+
+  // Get ALL SOS requests globally for rescue dashboard
+  const getAllSOSRequests = (): SOSRequest[] => {
+    return allSOSRequestsQuery?.map(convertConvexSOSToSOS) || [];
   };
 
   // Accept SOS request (for rescuers)
