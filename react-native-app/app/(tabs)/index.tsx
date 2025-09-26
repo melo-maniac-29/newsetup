@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Shield, MapPin, AlertTriangle, Bell } from 'lucide-react-native';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useFamily } from '@/hooks/useFamily';
 import { useLocation } from '@/hooks/useLocation';
 import { Card } from '@/components/ui/Card';

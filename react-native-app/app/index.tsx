@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Redirect } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { theme } from '@/constants/theme';
 
 export default function Index() {

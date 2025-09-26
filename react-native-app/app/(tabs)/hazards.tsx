@@ -18,7 +18,7 @@ import {
   Clock
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/hooks/useLocation';
 import { useHazards } from '@/hooks/useHazards';
 import { Card } from '@/components/ui/Card';

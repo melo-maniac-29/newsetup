@@ -17,7 +17,7 @@ import {
   CheckCircle,
   QrCode,
 } from 'lucide-react-native';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useSOS } from '@/hooks/useSOS';
 import { useHazards } from '@/hooks/useHazards';
 import { useSafeHouses } from '@/hooks/useSafeHouses';

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { MapPin, Users, QrCode, CheckCircle, Navigation } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useLocation } from '@/hooks/useLocation';
 import { useSafeHouses } from '@/hooks/useSafeHouses';
 import { Card } from '@/components/ui/Card';

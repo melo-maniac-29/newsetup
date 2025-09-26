@@ -25,9 +25,9 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import QRCode from 'react-native-qrcode-svg';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useFamily } from '@/hooks/useFamily';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -46,22 +46,36 @@ export default function ProfileScreen() {
   const [editedName, setEditedName] = useState(user?.name || '');
   const [showQRCode, setShowQRCode] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
+  const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
     (async () => {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
+      if (!permission?.granted) {
+        await requestPermission();
+      }
     })();
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Logout', onPress: logout, style: 'destructive' },
+        { 
+          text: 'Logout', 
+          onPress: async () => {
+            try {
+              await logout();
+              console.log('Logout complete from profile screen');
+            } catch (error) {
+              console.error('Logout error in profile screen:', error);
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            }
+          }, 
+          style: 'destructive' 
+        },
       ]
     );
   };
@@ -406,26 +420,29 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           
-          {hasPermission === null ? (
+          {!permission ? (
             <View style={styles.permissionContainer}>
               <Text style={styles.permissionText}>Requesting camera permission...</Text>
             </View>
-          ) : hasPermission === false ? (
+          ) : !permission.granted ? (
             <View style={styles.permissionContainer}>
               <Text style={styles.permissionText}>No access to camera</Text>
               <Button
                 title="Grant Permission"
                 onPress={async () => {
-                  const { status } = await BarCodeScanner.requestPermissionsAsync();
-                  setHasPermission(status === 'granted');
+                  await requestPermission();
                 }}
                 variant="accent"
               />
             </View>
           ) : (
-            <BarCodeScanner
-              onBarCodeScanned={handleBarCodeScanned}
+            <CameraView
               style={styles.scanner}
+              facing="back"
+              barcodeScannerSettings={{
+                barcodeTypes: ["qr"],
+              }}
+              onBarcodeScanned={handleBarCodeScanned}
             />
           )}
           

@@ -9,7 +9,7 @@ import {
   Animated,
 } from 'react-native';
 import { Shield, MapPin, Clock, Phone, CheckCircle } from 'lucide-react-native';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth } from '@/contexts/AuthContext';
 import { useSOS } from '@/hooks/useSOS';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
