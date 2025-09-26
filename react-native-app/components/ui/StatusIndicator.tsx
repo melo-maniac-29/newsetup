@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { theme } from '@/constants/theme';
 
 interface StatusIndicatorProps {
-  status: 'sent' | 'in-progress' | 'rescued' | 'pending' | 'verified' | 'assigned' | 'resolved';
+  status: 'sent' | 'in-progress' | 'rescued' | 'cancelled' | 'pending' | 'verified' | 'assigned' | 'resolved';
   size?: 'small' | 'medium';
 }
 
@@ -19,6 +19,8 @@ export function StatusIndicator({ status, size = 'medium' }: StatusIndicatorProp
       case 'rescued':
       case 'resolved':
         return { color: theme.colors.success, label: status.charAt(0).toUpperCase() + status.slice(1) };
+      case 'cancelled':
+        return { color: theme.colors.onSurfaceVariant, label: 'Cancelled' };
       case 'verified':
         return { color: theme.colors.success, label: 'Verified' };
       default:

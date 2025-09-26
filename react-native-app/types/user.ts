@@ -28,7 +28,7 @@ export interface SOSRequest {
     longitude: number;
     address: string;
   };
-  status: 'sent' | 'in-progress' | 'rescued';
+  status: 'sent' | 'in-progress' | 'rescued' | 'cancelled';
   digiPin: string;
   timestamp: string;
   rescuerId?: string;

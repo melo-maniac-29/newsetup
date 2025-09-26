@@ -32,10 +32,23 @@ export function useSOS(userId?: string) {
     userId ? { userId: userId as Id<'users'> } : 'skip'
   );
 
-  // Get the most recent active SOS request
-  const sosRequest = getUserSOSRequests?.[0] ? convertConvexSOSToSOS(getUserSOSRequests[0]) : null;
+  // Get the most recent active SOS request (not cancelled or rescued)
+  const sosRequest = getUserSOSRequests?.find(sos => 
+    sos.status === 'sent' || sos.status === 'in-progress'
+  ) ? convertConvexSOSToSOS(getUserSOSRequests.find(sos => 
+    sos.status === 'sent' || sos.status === 'in-progress'
+  )!) : null;
 
   const sendSOS = async (userId: string, digiPin: string): Promise<SOSRequest> => {
+    // Check if user already has an active SOS request
+    const activeRequest = getUserSOSRequests?.find(sos => 
+      sos.status === 'sent' || sos.status === 'in-progress'
+    );
+    
+    if (activeRequest) {
+      throw new Error('You already have an active SOS request. Please wait for rescue or cancel the current request.');
+    }
+    
     setIsLoading(true);
     
     try {
@@ -88,8 +101,14 @@ export function useSOS(userId?: string) {
     }
   };
 
-  const getSOSHistory = async (userId: string): Promise<SOSRequest[]> => {
-    // This will be handled by the query hook
+  const getSOSHistory = (): SOSRequest[] => {
+    return getUserSOSRequests?.map(convertConvexSOSToSOS).filter(sos => 
+      sos.status === 'rescued' || sos.status === 'cancelled'
+    ) || [];
+  };
+
+  // Get all SOS requests for the user
+  const getAllSOSRequests = (): SOSRequest[] => {
     return getUserSOSRequests?.map(convertConvexSOSToSOS) || [];
   };
 
@@ -105,6 +124,7 @@ export function useSOS(userId?: string) {
     sendSOS,
     cancelSOS,
     getSOSHistory,
+    getAllSOSRequests,
     getActiveSOSRequests,
   };
 }

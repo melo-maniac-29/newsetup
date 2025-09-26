@@ -18,8 +18,14 @@ import { theme } from '@/constants/theme';
 
 export default function SOSScreen() {
   const { user } = useAuth();
-  const { sosRequest, isLoading, sendSOS: sendSOSRequest, cancelSOS } = useSOS(user?.id);
+  const { sosRequest, isLoading, sendSOS: sendSOSRequest, cancelSOS, getAllSOSRequests } = useSOS(user?.id);
   const [pulseAnim] = useState(new Animated.Value(1));
+
+  // Get SOS history (completed or cancelled requests)
+  const allRequests = getAllSOSRequests();
+  const sosHistory = allRequests.filter(sos => 
+    sos.status === 'rescued' || sos.status === 'cancelled'
+  ).slice(0, 5); // Show last 5 completed requests
 
   useEffect(() => {
     if (sosRequest?.status === 'sent') {
@@ -47,16 +53,39 @@ export default function SOSScreen() {
   const handleSendSOS = async () => {
     if (!user) return;
     
-    try {
-      await sendSOSRequest(user.id, user.digiPin);
+    // Check if there's already an active SOS
+    if (sosRequest && (sosRequest.status === 'sent' || sosRequest.status === 'in-progress')) {
       Alert.alert(
-        'SOS Sent Successfully',
-        `Your emergency request has been sent. Your DigiPIN is ${user.digiPin}`,
+        'SOS Already Active',
+        'You already have an active SOS request. Please wait for rescue or cancel the current request first.',
         [{ text: 'OK' }]
       );
-    } catch (error) {
-      Alert.alert('Error', 'Failed to send SOS. Please try again.');
+      return;
     }
+    
+    Alert.alert(
+      'Send Emergency SOS?',
+      'This will send an emergency request to rescue services with your current location.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send SOS',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await sendSOSRequest(user.id, user.digiPin);
+              Alert.alert(
+                'SOS Sent Successfully',
+                `Your emergency request has been sent. Your DigiPIN is ${user.digiPin}`,
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              Alert.alert('Error', error instanceof Error ? error.message : 'Failed to send SOS. Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const handleCancelSOS = () => {
@@ -222,6 +251,45 @@ export default function SOSScreen() {
           Share this code with rescuers to verify your identity
         </Text>
       </Card>
+
+      {/* SOS History */}
+      {sosHistory.length > 0 && (
+        <Card style={styles.historyCard}>
+          <Text style={styles.historyTitle}>Recent SOS History</Text>
+          {sosHistory.map((request, index) => (
+            <View key={request.id} style={styles.historyItem}>
+              <View style={styles.historyHeader}>
+                <View style={styles.historyStatus}>
+                  <StatusIndicator 
+                    status={request.status} 
+                    size="small" 
+                  />
+                  <Text style={styles.historyStatusText}>
+                    {request.status === 'rescued' ? 'Rescued' : 'Cancelled'}
+                  </Text>
+                </View>
+                <Text style={styles.historyTime}>
+                  {new Date(request.timestamp).toLocaleDateString()}
+                </Text>
+              </View>
+              <View style={styles.historyDetails}>
+                <View style={styles.historyDetail}>
+                  <MapPin color={theme.colors.onSurfaceVariant} size={14} />
+                  <Text style={styles.historyDetailText}>
+                    {request.location.address || `${request.location.latitude.toFixed(4)}, ${request.location.longitude.toFixed(4)}`}
+                  </Text>
+                </View>
+                <View style={styles.historyDetail}>
+                  <Shield color={theme.colors.onSurfaceVariant} size={14} />
+                  <Text style={styles.historyDetailText}>
+                    DigiPIN: {request.digiPin}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ))}
+        </Card>
+      )}
 
       {/* Emergency Tips */}
       <Card style={styles.tipsCard}>
@@ -469,6 +537,58 @@ const styles = StyleSheet.create({
     color: theme.colors.onBackground,
     marginBottom: theme.spacing.xs,
     lineHeight: 22,
+  },
+  historyCard: {
+    margin: theme.spacing.lg,
+  },
+  historyTitle: {
+    ...theme.typography.h3,
+    color: theme.colors.onBackground,
+    marginBottom: theme.spacing.md,
+  },
+  historyItem: {
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+    marginBottom: theme.spacing.sm,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  historyStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: theme.spacing.xs,
+  },
+  historyStatusText: {
+    ...theme.typography.caption,
+    color: theme.colors.onBackground,
+    marginLeft: theme.spacing.xs,
+    fontWeight: '600',
+  },
+  historyTime: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+  },
+  historyDetails: {
+    gap: theme.spacing.xs,
+  },
+  historyDetail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyDetailText: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    marginLeft: theme.spacing.xs,
   },
   bottomSpacer: {
     height: theme.spacing.xl,
