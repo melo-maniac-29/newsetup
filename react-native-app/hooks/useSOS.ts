@@ -33,6 +33,9 @@ export function useSOS(userId?: string) {
     userId ? { userId: userId as Id<'users'> } : 'skip'
   );
 
+  // Query for active SOS requests (for rescuers)
+  const activeSOSRequestsQuery = useQuery(api.sos.getActiveSOSRequests);
+
   // Get the most recent active SOS request (not cancelled or rescued)
   const sosRequest = getUserSOSRequests?.find(sos => 
     sos.status === 'sent' || sos.status === 'in-progress'
@@ -133,9 +136,37 @@ export function useSOS(userId?: string) {
   };
 
   // Get active SOS requests for rescuers
-  const getActiveSOSRequests = async (): Promise<SOSRequest[]> => {
-    // This would need a specific Convex query to get all active SOS requests for rescuer dashboard
-    return [];
+  const getActiveSOSRequests = (): SOSRequest[] => {
+    return activeSOSRequestsQuery?.map(convertConvexSOSToSOS) || [];
+  };
+
+  // Accept SOS request (for rescuers)
+  const acceptSOSRequest = useMutation(api.sos.acceptSOSRequest);
+  
+  const acceptSOS = async (sosId: string, rescuerId: string) => {
+    try {
+      await acceptSOSRequest({
+        sosId: sosId as Id<'sosRequests'>,
+        rescuerId: rescuerId as Id<'users'>,
+      });
+    } catch (error) {
+      console.error('Error accepting SOS:', error);
+      throw error;
+    }
+  };
+
+  const completeSOS = async (sosId: string, rescuerId: string, notes?: string) => {
+    try {
+      await updateSOSStatusMutation({
+        sosId: sosId as Id<'sosRequests'>,
+        status: 'rescued',
+        rescuerId: rescuerId as Id<'users'>,
+        notes: notes || 'Rescue completed successfully',
+      });
+    } catch (error) {
+      console.error('Error completing SOS:', error);
+      throw error;
+    }
   };
 
   return {
@@ -146,5 +177,7 @@ export function useSOS(userId?: string) {
     getSOSHistory,
     getAllSOSRequests,
     getActiveSOSRequests,
+    acceptSOS,
+    completeSOS,
   };
 }

@@ -79,6 +79,16 @@ export const getActiveSOSRequests = query({
   },
 });
 
+// Get ALL SOS requests globally (for rescue dashboard history)
+export const getAllSOSRequests = query({
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("sosRequests")
+      .order("desc")
+      .collect();
+  },
+});
+
 // Update SOS status
 export const updateSOSStatus = mutation({
   args: {

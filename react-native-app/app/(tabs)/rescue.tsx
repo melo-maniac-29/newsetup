@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
 } from 'react-native';
 import {
   Shield,
@@ -15,12 +16,14 @@ import {
   Clock,
   Phone,
   CheckCircle,
-  QrCode,
+  X,
 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSOS } from '@/hooks/useSOS';
 import { useHazards } from '@/hooks/useHazards';
 import { useSafeHouses } from '@/hooks/useSafeHouses';
+import { useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -29,32 +32,32 @@ import { theme } from '@/constants/theme';
 
 export default function RescueScreen() {
   const { user } = useAuth();
-  const { getActiveSOSRequests } = useSOS();
-  const { hazards, getHazardsByStatus } = useHazards();
+  const { getActiveSOSRequests, acceptSOS, completeSOS, getAllSOSRequests } = useSOS();
+  const { hazards, getHazardsByStatus, assignHazard, updateHazardStatus } = useHazards();
   const { safeHouses } = useSafeHouses();
-  const [activeTab, setActiveTab] = useState<'sos' | 'hazards' | 'safehouses'>('sos');
-  const [activeSOS, setActiveSOS] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'sos' | 'history' | 'hazards' | 'safehouses'>('sos');
+  const [showOccupantsModal, setShowOccupantsModal] = useState(false);
+  const [selectedSafeHouse, setSelectedSafeHouse] = useState<any>(null);
 
-  useEffect(() => {
-    // Load active SOS requests for rescuers
-    const loadActiveSOS = async () => {
-      try {
-        const requests = await getActiveSOSRequests();
-        setActiveSOS(requests);
-      } catch (error) {
-        console.error('Error loading SOS requests:', error);
-      }
-    };
-
-    if (user?.role === 'rescuer') {
-      loadActiveSOS();
-    }
-  }, [user]);
-
-  // Filter data for rescue dashboard
+  // Get real-time data
+  const activeSOS = getActiveSOSRequests();
+  // Get ALL SOS history globally (not just current user)
+  const allGlobalSOS = useQuery(api.sos.getAllSOSRequests) || [];
+  const sosHistory = allGlobalSOS.filter((sos: any) => sos.status === 'rescued' || sos.status === 'cancelled');
   const assignedHazards = getHazardsByStatus('assigned');
   const verifiedHazards = getHazardsByStatus('verified');
   const activeSafeHouses = safeHouses.filter(sh => sh.isActive);
+
+  // Get priority for SOS requests
+  const getSOSPriority = (sos: any) => {
+    const now = Date.now();
+    const sosTime = new Date(sos.timestamp).getTime();
+    const timeDiff = (now - sosTime) / (1000 * 60); // minutes
+    
+    if (timeDiff > 30) return 'critical';
+    if (timeDiff > 15) return 'high';
+    return 'medium';
+  };
 
   if (!user || user.role !== 'rescuer') {
     return (
@@ -65,6 +68,8 @@ export default function RescueScreen() {
   }
 
   const acceptSOSTask = async (sosId: string) => {
+    if (!user) return;
+    
     Alert.alert(
       'Accept SOS Task',
       'Are you sure you want to accept this rescue task?',
@@ -73,15 +78,21 @@ export default function RescueScreen() {
         {
           text: 'Accept',
           onPress: async () => {
-            // This would use a proper Convex mutation to accept SOS requests
-            Alert.alert('Task Accepted', 'You have been assigned to this rescue.');
+            try {
+              await acceptSOS(sosId, user.id);
+              Alert.alert('Task Accepted', 'You have been assigned to this rescue.');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to accept task. Please try again.');
+            }
           },
         },
       ]
     );
   };
 
-  const markSOSCompleted = (sosId: string) => {
+  const markSOSCompleted = async (sosId: string) => {
+    if (!user) return;
+    
     Alert.alert(
       'Complete Rescue',
       'Mark this rescue as completed?',
@@ -89,16 +100,53 @@ export default function RescueScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Complete',
-          onPress: () => {
-            Alert.alert('Rescue Completed', 'Great work! The rescue has been marked as completed.');
+          onPress: async () => {
+            try {
+              await completeSOS(sosId, user.id, 'Rescue completed successfully');
+              Alert.alert('Rescue Completed', 'Great work! The rescue has been marked as completed.');
+            } catch (error) {
+              Alert.alert('Error', 'Failed to complete rescue. Please try again.');
+            }
           },
         },
       ]
     );
   };
 
-  const acceptHazardTask = (hazardId: string) => {
-    Alert.alert('Task Accepted', 'You have been assigned to resolve this hazard.');
+  const acceptHazardTask = async (hazardId: string) => {
+    if (!user) return;
+    
+    try {
+      await updateHazardStatus(hazardId, 'assigned', user.id);
+      Alert.alert('Task Accepted', 'You have been assigned to resolve this hazard.');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to accept hazard task. Please try again.');
+    }
+  };
+
+  const contactUser = (sosData: any) => {
+    // In a real app, you'd fetch user phone from database using sosData.userId
+    const userPhone = sosData.userPhone || `+91-${Math.floor(Math.random() * 9000000000) + 1000000000}`; // Demo phone
+    
+    Alert.alert(
+      'Call SOS User',
+      `Call the person who requested help?\n\nPhone: ${userPhone}\nDigiPIN: ${sosData.digiPin}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Call Now',
+          onPress: () => {
+            // In real app: Linking.openURL(`tel:${userPhone}`)
+            Alert.alert('Calling...', `Dialing ${userPhone}`);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleViewOccupants = (safeHouse: any) => {
+    setSelectedSafeHouse(safeHouse);
+    setShowOccupantsModal(true);
   };
 
   const openQRScanner = () => {
@@ -133,7 +181,17 @@ export default function RescueScreen() {
         >
           <Shield color={activeTab === 'sos' ? theme.colors.accent : theme.colors.onSurfaceVariant} size={20} />
           <Text style={[styles.tabText, activeTab === 'sos' && styles.tabTextActive]}>
-            SOS Tasks
+            Active SOS
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'history' && styles.tabActive]}
+          onPress={() => setActiveTab('history')}
+        >
+          <Clock color={activeTab === 'history' ? theme.colors.accent : theme.colors.onSurfaceVariant} size={20} />
+          <Text style={[styles.tabText, activeTab === 'history' && styles.tabTextActive]}>
+            SOS History
           </Text>
         </TouchableOpacity>
 
@@ -162,79 +220,165 @@ export default function RescueScreen() {
         {/* SOS Tasks */}
         {activeTab === 'sos' && (
           <View style={styles.section}>
-            {activeSOS.map((sos) => (
-              <Card key={sos.id} style={styles.taskCard}>
-                <View style={styles.taskHeader}>
-                  <View style={styles.taskInfo}>
-                    <StatusIndicator status={sos.status} size="medium" />
-                    <Badge
-                      label={sos.priority}
-                      variant={sos.priority === 'critical' ? 'danger' : 'warning'}
-                      size="small"
-                    />
+            {activeSOS.map((sos) => {
+              const priority = getSOSPriority(sos);
+              return (
+                <Card key={sos.id} style={styles.taskCard}>
+                  <View style={styles.taskHeader}>
+                    <View style={styles.taskInfo}>
+                      <StatusIndicator status={sos.status} size="medium" />
+                      <Badge
+                        label={priority}
+                        variant={priority === 'critical' ? 'danger' : priority === 'high' ? 'warning' : 'accent'}
+                        size="small"
+                      />
+                    </View>
+                    <Text style={styles.taskTime}>{getTimeAgo(sos.timestamp)}</Text>
                   </View>
-                  <Text style={styles.taskTime}>{getTimeAgo(sos.timestamp)}</Text>
-                </View>
 
-                <View style={styles.taskDetails}>
-                  <View style={styles.taskDetail}>
-                    <Shield color={theme.colors.accent} size={16} />
-                    <Text style={styles.taskDetailText}>DigiPIN: {sos.digiPin}</Text>
+                  <View style={styles.taskDetails}>
+                    <View style={styles.taskDetail}>
+                      <Shield color={theme.colors.accent} size={16} />
+                      <Text style={styles.taskDetailText}>DigiPIN: {sos.digiPin}</Text>
+                    </View>
+                    
+                    <View style={styles.taskDetail}>
+                      <MapPin color={theme.colors.accent} size={16} />
+                      <Text style={styles.taskDetailText}>{sos.location?.address || 'Location not available'}</Text>
+                    </View>
+                    
+                    <View style={styles.taskDetail}>
+                      <Clock color={theme.colors.accent} size={16} />
+                      <Text style={styles.taskDetailText}>
+                        Reported {getTimeAgo(sos.timestamp)}
+                      </Text>
+                    </View>
                   </View>
-                  
-                  <View style={styles.taskDetail}>
-                    <MapPin color={theme.colors.accent} size={16} />
-                    <Text style={styles.taskDetailText}>{sos.location.address}</Text>
-                  </View>
-                  
-                  <View style={styles.taskDetail}>
-                    <Clock color={theme.colors.accent} size={16} />
-                    <Text style={styles.taskDetailText}>
-                      Reported {getTimeAgo(sos.timestamp)}
-                    </Text>
-                  </View>
-                </View>
 
-                {sos.notes && (
-                  <View style={styles.taskNotes}>
-                    <Text style={styles.taskNotesLabel}>Notes:</Text>
-                    <Text style={styles.taskNotesText}>{sos.notes}</Text>
-                  </View>
-                )}
-
-                <View style={styles.taskActions}>
-                  {sos.status === 'sent' && (
-                    <Button
-                      title="Accept Task"
-                      onPress={() => acceptSOSTask(sos.id)}
-                      variant="accent"
-                      size="small"
-                      style={styles.taskActionButton}
-                    />
-                  )}
-                  
-                  {sos.status === 'in-progress' && sos.rescuerId === user.id && (
-                    <Button
-                      title="Mark Completed"
-                      onPress={() => markSOSCompleted(sos.id)}
-                      variant="primary"
-                      size="small"
-                      style={styles.taskActionButton}
-                    />
+                  {sos.notes && (
+                    <View style={styles.taskNotes}>
+                      <Text style={styles.taskNotesLabel}>Notes:</Text>
+                      <Text style={styles.taskNotesText}>{sos.notes}</Text>
+                    </View>
                   )}
 
-                  <TouchableOpacity style={styles.contactButton}>
-                    <Phone color={theme.colors.accent} size={16} />
-                    <Text style={styles.contactButtonText}>Contact</Text>
-                  </TouchableOpacity>
-                </View>
-              </Card>
-            ))}
+                  <View style={styles.taskActions}>
+                    {sos.status === 'sent' && (
+                      <Button
+                        title="Accept Task"
+                        onPress={() => acceptSOSTask(sos.id)}
+                        variant="accent"
+                        size="small"
+                        style={styles.taskActionButton}
+                      />
+                    )}
+                    
+                    {sos.status === 'in-progress' && sos.rescuerId === user.id && (
+                      <Button
+                        title="Mark Completed"
+                        onPress={() => markSOSCompleted(sos.id)}
+                        variant="primary"
+                        size="small"
+                        style={styles.taskActionButton}
+                      />
+                    )}
+
+                    <TouchableOpacity 
+                      style={styles.contactButton}
+                      onPress={() => contactUser(sos)}
+                    >
+                      <Phone color={theme.colors.accent} size={16} />
+                      <Text style={styles.contactButtonText}>Call User</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Card>
+              );
+            })}
 
             {activeSOS.length === 0 && (
               <Card style={styles.emptyState}>
                 <Shield color={theme.colors.onSurfaceVariant} size={48} />
                 <Text style={styles.emptyStateText}>No active SOS requests</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  New emergency requests will appear here
+                </Text>
+              </Card>
+            )}
+          </View>
+        )}
+
+        {/* SOS History */}
+        {activeTab === 'history' && (
+          <View style={styles.section}>
+            {sosHistory.map((sos: any) => {
+              const priority = getSOSPriority(sos);
+              return (
+                <Card key={sos.id} style={styles.taskCard}>
+                  <View style={styles.taskHeader}>
+                    <View style={styles.taskInfo}>
+                      <StatusIndicator status={sos.status} size="medium" />
+                      <Badge
+                        label={sos.status === 'rescued' ? 'Rescued' : 'Cancelled'}
+                        variant={sos.status === 'rescued' ? 'success' : 'warning'}
+                        size="small"
+                      />
+                    </View>
+                    <Text style={styles.taskTime}>{getTimeAgo(sos.timestamp)}</Text>
+                  </View>
+
+                  <View style={styles.taskDetails}>
+                    <View style={styles.taskDetail}>
+                      <Users color={theme.colors.primary} size={16} />
+                      <Text style={styles.taskDetailText}>User: {sos.userId?.slice(-6) || 'Unknown'}</Text>
+                    </View>
+                    
+                    <View style={styles.taskDetail}>
+                      <Shield color={theme.colors.accent} size={16} />
+                      <Text style={styles.taskDetailText}>DigiPIN: {sos.digiPin}</Text>
+                    </View>
+                    
+                    <View style={styles.taskDetail}>
+                      <MapPin color={theme.colors.accent} size={16} />
+                      <Text style={styles.taskDetailText}>{sos.location?.address || 'Location not available'}</Text>
+                    </View>
+                    
+                    {sos.rescuerId && sos.status === 'rescued' && (
+                      <View style={styles.taskDetail}>
+                        <CheckCircle color={theme.colors.success} size={16} />
+                        <Text style={styles.taskDetailText}>
+                          Rescued by: {sos.rescuerId.slice(-6)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {sos.notes && (
+                    <View style={styles.taskNotes}>
+                      <Text style={styles.taskNotesLabel}>Notes:</Text>
+                      <Text style={styles.taskNotesText}>{sos.notes}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.taskActions}>
+                    <TouchableOpacity 
+                      style={styles.contactButton}
+                      onPress={() => contactUser(sos)}
+                    >
+                      <Phone color={theme.colors.accent} size={16} />
+                      <Text style={styles.contactButtonText}>Call User</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Card>
+              );
+            })}
+
+            {sosHistory.length === 0 && (
+              <Card style={styles.emptyState}>
+                <Clock color={theme.colors.onSurfaceVariant} size={48} />
+                <Text style={styles.emptyStateText}>No SOS history</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  All completed and cancelled SOS requests from all users will appear here
+                </Text>
               </Card>
             )}
           </View>
@@ -290,25 +434,6 @@ export default function RescueScreen() {
         {/* Safe House Management */}
         {activeTab === 'safehouses' && (
           <View style={styles.section}>
-            {/* QR Scanner Card */}
-            <Card style={styles.qrScannerCard}>
-              <View style={styles.qrScannerHeader}>
-                <QrCode color={theme.colors.accent} size={24} />
-                <Text style={styles.qrScannerTitle}>Check-in Scanner</Text>
-              </View>
-              <Text style={styles.qrScannerSubtitle}>
-                Scan civilian QR codes to check them into safe houses
-              </Text>
-              <Button
-                title="Open QR Scanner"
-                onPress={openQRScanner}
-                variant="accent"
-                size="medium"
-                style={styles.qrScannerButton}
-              />
-            </Card>
-
-            {/* Safe House Status */}
             {activeSafeHouses.map((safeHouse) => (
               <Card key={safeHouse.id} style={styles.taskCard}>
                 <View style={styles.taskHeader}>
@@ -316,6 +441,11 @@ export default function RescueScreen() {
                   <Text style={styles.taskTime}>
                     Capacity: {safeHouse.currentOccupancy}/{safeHouse.capacity}
                   </Text>
+                </View>
+
+                <View style={styles.taskDetail}>
+                  <MapPin color={theme.colors.accent} size={16} />
+                  <Text style={styles.taskDetailText}>{safeHouse.address || 'Address not available'}</Text>
                 </View>
 
                 <View style={styles.occupancyInfo}>
@@ -334,17 +464,26 @@ export default function RescueScreen() {
                           width: `${(safeHouse.currentOccupancy / safeHouse.capacity) * 100}%`,
                           backgroundColor: safeHouse.currentOccupancy / safeHouse.capacity > 0.8
                             ? theme.colors.danger
-                            : theme.colors.accent,
+                            : safeHouse.currentOccupancy / safeHouse.capacity > 0.6
+                            ? theme.colors.warning
+                            : theme.colors.success,
                         },
                       ]}
                     />
                   </View>
                 </View>
 
-                                <View style={styles.taskActions}>
+                {safeHouse.currentOccupancy / safeHouse.capacity > 0.8 && (
+                  <View style={styles.warningInfo}>
+                    <AlertTriangle color={theme.colors.danger} size={14} />
+                    <Text style={styles.warningText}>Near capacity - consider alternative locations</Text>
+                  </View>
+                )}
+
+                <View style={styles.taskActions}>
                   <Button
-                    title="View Details"
-                    onPress={() => {}}
+                    title="View Occupants"
+                    onPress={() => handleViewOccupants(safeHouse)}
                     variant="accent"
                     size="small"
                     style={styles.taskActionButton}
@@ -352,12 +491,127 @@ export default function RescueScreen() {
                 </View>
               </Card>
             ))}
+
+            {activeSafeHouses.length === 0 && (
+              <Card style={styles.emptyState}>
+                <MapPin color={theme.colors.onSurfaceVariant} size={48} />
+                <Text style={styles.emptyStateText}>No active safe houses</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Safe house information will appear here when available
+                </Text>
+              </Card>
+            )}
           </View>
         )}
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* View Occupants Modal */}
+      {selectedSafeHouse && (
+        <ViewOccupantsModal
+          visible={showOccupantsModal}
+          onClose={() => setShowOccupantsModal(false)}
+          safeHouse={selectedSafeHouse}
+        />
+      )}
     </View>
+  );
+}
+
+// View Occupants Modal Component (same as in safehouses.tsx)
+function ViewOccupantsModal({ 
+  visible, 
+  onClose, 
+  safeHouse 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  safeHouse: any;
+}) {
+  const [occupants, setOccupants] = useState<any[]>([]);
+  
+  const occupantsQuery = useQuery(
+    api.safehouses.getSafeHouseOccupants, 
+    visible ? { safeHouseId: safeHouse.id as any } : "skip"
+  );
+  
+  // Update occupants when query data changes
+  useEffect(() => {
+    if (occupantsQuery) {
+      setOccupants(occupantsQuery);
+    }
+  }, [occupantsQuery]);
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContainer, { minHeight: '75%' }]}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{safeHouse.name} - Occupants</Text>
+            <TouchableOpacity onPress={onClose} style={styles.modalCloseButton}>
+              <X color={theme.colors.onSurface} size={24} />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Safe House Details</Text>
+              <View style={styles.statusContainer}>
+                <Text style={styles.occupancyStatusText}>
+                  📍 {safeHouse.address}
+                </Text>
+                <Text style={styles.occupancyStatusText}>
+                  📱 DIGIPIN: {safeHouse.locationDigiPin || 'N/A'}
+                </Text>
+                <Text style={styles.occupancyStatusText}>
+                  👥 Occupancy: {safeHouse.currentOccupancy}/{safeHouse.capacity}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Current Occupants ({safeHouse.currentOccupancy})</Text>
+              {!occupantsQuery ? (
+                <View style={styles.statusContainer}>
+                  <Text style={styles.occupancyStatusText}>Loading occupants...</Text>
+                </View>
+              ) : occupants.length > 0 ? (
+                occupants.map((occupant, index) => (
+                  <View key={occupant.id} style={styles.statusContainer}>
+                    <Text style={styles.occupancyStatusText}>
+                      👤 {occupant.name}
+                    </Text>
+                    <Text style={[styles.occupancyStatusText, { fontSize: 12 }]}>
+                      DIGIPIN: {occupant.digiPin} • Check-in: {occupant.checkInTimeFormatted}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.statusContainer}>
+                  <Text style={styles.occupancyStatusText}>
+                    No occupants currently checked in
+                  </Text>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+          
+          <View style={styles.modalActions}>
+            <Button 
+              title="Close" 
+              onPress={onClose} 
+              variant="secondary" 
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -513,29 +767,11 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     marginTop: theme.spacing.md,
   },
-  qrScannerCard: {
-    backgroundColor: `${theme.colors.accent}08`,
-    borderLeftWidth: 4,
-    borderLeftColor: theme.colors.accent,
-    marginBottom: theme.spacing.md,
-  },
-  qrScannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.xs,
-  },
-  qrScannerTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.onBackground,
-    marginLeft: theme.spacing.xs,
-  },
-  qrScannerSubtitle: {
-    ...theme.typography.body,
+  emptyStateSubtext: {
+    ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    marginBottom: theme.spacing.md,
-  },
-  qrScannerButton: {
-    alignSelf: 'flex-start',
+    marginTop: theme.spacing.xs,
+    textAlign: 'center',
   },
   occupancyInfo: {
     flexDirection: 'row',
@@ -564,6 +800,21 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 4,
   },
+  warningInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    backgroundColor: `${theme.colors.danger}10`,
+    borderRadius: theme.borderRadius.sm,
+  },
+  warningText: {
+    ...theme.typography.caption,
+    color: theme.colors.danger,
+    marginLeft: theme.spacing.xs,
+    fontWeight: '500',
+  },
   suppliesNeeded: {
     marginBottom: theme.spacing.sm,
   },
@@ -580,5 +831,76 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: theme.spacing.xl,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.lg,
+    padding: 0,
+    margin: theme.spacing.md,
+    maxHeight: '90%',
+    minHeight: '70%',
+    width: '95%',
+    maxWidth: 500,
+    ...theme.shadows.large,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.outline,
+  },
+  modalTitle: {
+    ...theme.typography.h2,
+    color: theme.colors.onBackground,
+  },
+  modalCloseButton: {
+    backgroundColor: theme.colors.surfaceVariant,
+    borderRadius: theme.borderRadius.xl,
+    padding: theme.spacing.xs,
+  },
+  modalContent: {
+    flex: 1,
+    padding: theme.spacing.lg,
+    minHeight: 200,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: theme.spacing.md,
+    padding: theme.spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.outline,
+  },
+  // Form styles
+  inputGroup: {
+    marginBottom: theme.spacing.xl,
+  },
+  inputLabel: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    fontWeight: '600',
+    fontSize: 16,
+    marginBottom: theme.spacing.sm,
+  },
+  statusContainer: {
+    backgroundColor: theme.colors.secondary,
+    padding: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    marginBottom: theme.spacing.sm,
+  },
+  occupancyStatusText: {
+    ...theme.typography.body,
+    color: theme.colors.onBackground,
+    marginBottom: theme.spacing.xs,
+    fontWeight: '500',
   },
 });
