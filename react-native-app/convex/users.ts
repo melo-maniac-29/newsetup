@@ -368,3 +368,10 @@ export const getRescuers = query({
       .collect();
   },
 });
+
+// Admin query to get all users for dashboard analytics
+export const getAllUsers = query({
+  handler: async (ctx) => {
+    return await ctx.db.query("users").collect();
+  },
+});

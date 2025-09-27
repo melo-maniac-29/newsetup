@@ -258,4 +258,55 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_action", ["action"])
     .index("by_timestamp", ["timestamp"]),
+
+  // Crowdfunding campaigns for disaster relief
+  crowdfundingCampaigns: defineTable({
+    title: v.string(),
+    description: v.string(),
+    target: v.number(),
+    raised: v.number(),
+    donors: v.number(),
+    status: v.union(v.literal("active"), v.literal("completed"), v.literal("cancelled")),
+    createdBy: v.id("users"),
+    
+    // Associated disaster/location
+    relatedSOSIds: v.optional(v.array(v.id("sosRequests"))),
+    relatedHazardIds: v.optional(v.array(v.id("hazards"))),
+    targetLocation: v.optional(v.object({
+      state: v.string(),
+      district: v.optional(v.string()),
+      address: v.optional(v.string())
+    })),
+    
+    // Fund allocations
+    allocations: v.array(v.object({
+      safeHouseId: v.optional(v.id("safeHouses")),
+      location: v.string(),
+      amount: v.number(),
+      status: v.union(v.literal("pending"), v.literal("allocated"), v.literal("disbursed"))
+    })),
+    
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_status", ["status"])
+    .index("by_creator", ["createdBy"])
+    .index("by_created", ["createdAt"]),
+
+  // Individual donations to campaigns
+  donations: defineTable({
+    campaignId: v.id("crowdfundingCampaigns"),
+    donorId: v.optional(v.id("users")), // Optional for anonymous donations
+    amount: v.number(),
+    donorName: v.optional(v.string()), // For anonymous donations
+    donorEmail: v.optional(v.string()),
+    message: v.optional(v.string()),
+    paymentId: v.string(),
+    paymentStatus: v.union(v.literal("pending"), v.literal("completed"), v.literal("failed")),
+    timestamp: v.number(),
+  })
+    .index("by_campaign", ["campaignId"])
+    .index("by_donor", ["donorId"])
+    .index("by_payment_status", ["paymentStatus"]),
 });
