@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import IndiaMap from '../maps/IndiaMap'
 import StatCard from '../ui/StatCard'
-import SeedButton from '../SeedButton'
 
 export default function OverviewTab() {
   // Fetch data from Convex backend
@@ -50,9 +49,6 @@ export default function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      {/* Seed Database Button */}
-      <SeedButton />
-      
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard

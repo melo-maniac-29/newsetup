@@ -1,28 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { weatherApiService, LocationConditions } from '../services/weatherApi';
 
 export function useWeatherConditions() {
   const [conditions, setConditions] = useState<LocationConditions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Auto-refresh every 1 minute (60000ms) to keep data current
-  useEffect(() => {
-    let refreshInterval: NodeJS.Timeout;
-    
-    if (conditions) {
-      refreshInterval = setInterval(() => {
-        console.log('🔄 Auto-refreshing weather conditions...');
-        refreshConditions();
-      }, 60000); // 1 minute
-    }
-
-    return () => {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-      }
-    };
-  }, [conditions]);
 
   const fetchConditionsByCoordinates = async (lat: number, lon: number) => {
     try {
@@ -54,14 +36,36 @@ export function useWeatherConditions() {
     }
   };
 
-  const refreshConditions = async () => {
-    if (conditions) {
-      await fetchConditionsByCoordinates(
-        conditions.location.coordinates.lat, 
-        conditions.location.coordinates.lon
-      );
+  const refreshConditions = useCallback(async () => {
+    if (conditions?.location?.coordinates) {
+      try {
+        await fetchConditionsByCoordinates(
+          conditions.location.coordinates.lat, 
+          conditions.location.coordinates.lon
+        );
+      } catch (error) {
+        console.error('Error refreshing conditions:', error);
+      }
     }
-  };
+  }, [conditions?.location?.coordinates?.lat, conditions?.location?.coordinates?.lon]);
+
+  // Auto-refresh every 1 minute (60000ms) to keep data current
+  useEffect(() => {
+    let refreshInterval: ReturnType<typeof setInterval> | undefined;
+    
+    if (conditions?.location?.coordinates) {
+      refreshInterval = setInterval(() => {
+        console.log('🔄 Auto-refreshing weather conditions...');
+        refreshConditions();
+      }, 60000); // 1 minute
+    }
+
+    return () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+      }
+    };
+  }, [conditions?.location?.coordinates, refreshConditions]);
 
   return {
     conditions,
